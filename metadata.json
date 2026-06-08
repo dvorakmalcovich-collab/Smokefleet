@@ -1,0 +1,6 @@
+{
+  "name": "Smokefleet",
+  "description": "The ultimate mobile-first starter kit for creating, customizing, and exporting high-impact Smokefleet avatar edits with 3D sunglasses, smoky joints, and custom styled typography for X.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
