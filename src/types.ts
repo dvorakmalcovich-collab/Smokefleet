@@ -39,3 +39,14 @@ export interface TextGradientPreset {
   color2: string;
   shadow: string;
 }
+
+export interface AppStateSnapshot {
+  sunglassesTransform: ElementTransform;
+  jointTransform: ElementTransform;
+  textTransform: ElementTransform;
+  textConfig: TextConfig;
+  smokeConfig: SmokeConfig;
+  isMirrored: boolean;
+  imageSrc: string;
+}
+

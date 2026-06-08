@@ -121,8 +121,8 @@ export default function EditableCanvas({
     const cx = (jointTransform.x / 100) * parentSize.width;
     const cy = (jointTransform.y / 100) * parentSize.height;
 
-    // The joint is nominally 124px wide at scale 1.0 (relative to display container)
-    const baseWidth = 124;
+    // The joint is nominally 31% of the canvas width
+    const baseWidth = 0.31 * parentSize.width;
     const currentHalfWidth = (baseWidth * jointTransform.scale) / 2;
 
     const angleRad = (jointTransform.rotateZ * Math.PI) / 180;
@@ -215,7 +215,7 @@ export default function EditableCanvas({
           style={{
             left: `${sunglassesTransform.x}%`,
             top: `${sunglassesTransform.y}%`,
-            width: '128px',
+            width: '32%',
             transform: `perspective(800px) translate(-50%, -50%) 
                         rotateY(${sunglassesTransform.rotateY}deg)
                         rotateX(${sunglassesTransform.rotateX}deg) 
@@ -250,7 +250,7 @@ export default function EditableCanvas({
           style={{
             left: `${jointTransform.x}%`,
             top: `${jointTransform.y}%`,
-            width: '124px',
+            width: '31%',
             transform: `perspective(800px) translate(-50%, -50%) 
                         rotateY(${jointTransform.rotateY}deg)
                         rotateX(${jointTransform.rotateX}deg) 
@@ -321,13 +321,15 @@ export default function EditableCanvas({
           title="Drag to move. Scroll wheel to rotate."
         >
           <span
-            className={`block whitespace-nowrap text-3xl md:text-4xl font-bold select-none ${currentTextClass}`}
+            className={`block whitespace-nowrap font-bold select-none ${currentTextClass}`}
             style={{
+              fontSize: `${0.095 * (parentSize.width || 400) * textTransform.scale}px`,
+              lineHeight: 1.1,
               textShadow: textConfig.glowColor
-                ? `0px 0px 8px ${textConfig.glowColor}, 0 2px 4px rgba(0,0,0,1)`
+                ? `0px 0px ${8 * textTransform.scale}px ${textConfig.glowColor}, 0 ${2 * textTransform.scale}px ${4 * textTransform.scale}px rgba(0,0,0,1)`
                 : 'none',
               // Handle brutalist outline styling separately if requested
-              WebkitTextStroke: textConfig.colorPreset === 'brutalist' ? '2px #000000' : 'none',
+              WebkitTextStroke: textConfig.colorPreset === 'brutalist' ? `${2 * textTransform.scale}px #000000` : 'none',
             }}
           >
             {textConfig.content}

@@ -1,6 +1,6 @@
 {
   "name": "Smokefleet",
-  "description": "The ultimate mobile-first starter kit for creating, customizing, and exporting high-impact Smokefleet avatar edits with 3D sunglasses, smoky joints, and custom styled typography for X.",
+  "description": "Welcome to Smokefleet! Use this tool to pimp your profile picture with real perspective 3D sunglasses, smoky joints, and savage custom typography in seconds. 🚬🕶️",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -15,12 +15,137 @@ import {
   Share2,
   CheckCircle2,
   ArrowRight,
-  Shield
+  Shield,
+  X,
+  Undo,
+  Redo
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ElementTransform, SelectedElementType, SmokeConfig, TextConfig } from './types';
+import { ElementTransform, SelectedElementType, SmokeConfig, TextConfig, AppStateSnapshot } from './types';
 import EditableCanvas from './components/EditableCanvas';
 import TwitterPreview from './components/TwitterPreview';
+
+// High-Fidelity 3D Perspective Projection Slices Renderer
+const drawPerspectiveVector = async (
+  ctx: CanvasRenderingContext2D,
+  svgMarkup: string,
+  transform: ElementTransform,
+  baseWidth: number,
+  baseHeight: number,
+  canvasSize: number
+) => {
+  const img = new Image();
+  img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgMarkup);
+  await new Promise<void>((resolve) => {
+    img.onload = () => resolve();
+  });
+
+  const scale = transform.scale;
+  const rotateX = transform.rotateX;
+  const rotateY = transform.rotateY;
+  const rotateZ = transform.rotateZ;
+  const opacity = transform.opacity ?? 1;
+
+  ctx.save();
+  ctx.globalAlpha = opacity;
+
+  // Render vector SVG into an offscreen canvas at high resolution (crisp vectors)
+  const offscreen = document.createElement('canvas');
+  const renderScale = 4;
+  offscreen.width = baseWidth * renderScale;
+  offscreen.height = baseHeight * renderScale;
+  const oCtx = offscreen.getContext('2d');
+  if (!oCtx) {
+    ctx.restore();
+    return;
+  }
+  oCtx.drawImage(img, 0, 0, offscreen.width, offscreen.height);
+
+  // Translate to the element's position
+  const cx = (transform.x / 100) * canvasSize;
+  const cy = (transform.y / 100) * canvasSize;
+  ctx.translate(cx, cy);
+
+  // Apply roll rotation (rotateZ) in 2D space
+  const rz = (rotateZ * Math.PI) / 180;
+  ctx.rotate(rz);
+
+  // Degrees to radians for X and Y 3D rotations
+  const rx = (rotateX * Math.PI) / 180;
+  const ry = (rotateY * Math.PI) / 180;
+
+  // Camera perspective distance d. Matches the CSS perspective(800px) on 400px stage.
+  const d = 2.0 * canvasSize;
+
+  // We split the offscreen canvas into multiple vertical slices and project them individually
+  const numSlices = 100;
+  const sliceW = offscreen.width / numSlices;
+
+  // Scale target dimensions based on canvas size
+  const targetScale = scale * (canvasSize / 400);
+  const baseTargetW = baseWidth * targetScale;
+  const baseTargetH = baseHeight * targetScale;
+
+  for (let i = 0; i < numSlices; i++) {
+    // Relative percentage of width from center (-0.5 to 0.5)
+    const xPct = (i + 0.5) / numSlices - 0.5;
+    const srcX = i * sliceW;
+
+    const base3dX = xPct * baseTargetW;
+
+    // Y coordinates for top and bottom edges of slice
+    const base3dYTop = -0.5 * baseTargetH;
+    const base3dYBot = 0.5 * baseTargetH;
+
+    // Project Top point
+    const y1Top = base3dYTop * Math.cos(rx);
+    const z1Top = base3dYTop * Math.sin(rx);
+    const x2Top = base3dX * Math.cos(ry) + z1Top * Math.sin(ry);
+    const y2Top = y1Top;
+    const z2Top = -base3dX * Math.sin(ry) + z1Top * Math.cos(ry);
+
+    // Project Bottom point
+    const y1Bot = base3dYBot * Math.cos(rx);
+    const z1Bot = base3dYBot * Math.sin(rx);
+    const x2Bot = base3dX * Math.cos(ry) + z1Bot * Math.sin(ry);
+    const y2Bot = y1Bot;
+    const z2Bot = -base3dX * Math.sin(ry) + z1Bot * Math.cos(ry);
+
+    // Modern projective perspective mapping formulas
+    const denomTop = d - z2Top;
+    const projXTop = (x2Top * d) / (denomTop > 0.1 ? denomTop : 0.1);
+    const projYTop = (y2Top * d) / (denomTop > 0.1 ? denomTop : 0.1);
+
+    const denomBot = d - z2Bot;
+    const projXBot = (x2Bot * d) / (denomBot > 0.1 ? denomBot : 0.1);
+    const projYBot = (y2Bot * d) / (denomBot > 0.1 ? denomBot : 0.1);
+
+    // Midpoint X of the drawn slice
+    const destX = (projXTop + projXBot) / 2;
+    const destY = projYTop;
+    const destH = projYBot - projYTop;
+
+    // Properly scale slice width for depth factor
+    const sliceZCenter = (z2Top + z2Bot) / 2;
+    const sliceDenom = d - sliceZCenter;
+    const nominalStripeW = baseTargetW / numSlices;
+    const destW = (nominalStripeW * d) / (sliceDenom > 0.1 ? sliceDenom : 0.1);
+
+    ctx.drawImage(
+      offscreen,
+      srcX,
+      0,
+      sliceW,
+      offscreen.height,
+      destX - destW / 2,
+      destY,
+      destW + 0.6, // overlapping overlap margin to guarantee continuous seamless connections
+      destH
+    );
+  }
+
+  ctx.restore();
+};
 
 export default function App() {
   const [imageSrc, setImageSrc] = useState<string>('');
@@ -61,8 +186,113 @@ export default function App() {
   const [isMirrored, setIsMirrored] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportedImage, setExportedImage] = useState<string>('');
+  const [showExportModal, setShowExportModal] = useState<boolean>(false);
+
+  // History State for Undo / Redo
+  const [history, setHistory] = useState<AppStateSnapshot[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const isActionFromHistory = React.useRef<boolean>(false);
+  const historyRef = React.useRef<AppStateSnapshot[]>([]);
+  const historyIndexRef = React.useRef<number>(-1);
+
+  // Keep refs in sync so the state tracker doesn't need outer state dependency loop
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+
+  useEffect(() => {
+    historyIndexRef.current = historyIndex;
+  }, [historyIndex]);
+
+  // Track state changes to push snapshots onto history list
+  useEffect(() => {
+    if (isActionFromHistory.current) {
+      isActionFromHistory.current = false;
+      return;
+    }
+
+    const currentSnapshot: AppStateSnapshot = {
+      sunglassesTransform,
+      jointTransform,
+      textTransform,
+      textConfig,
+      smokeConfig,
+      isMirrored,
+      imageSrc
+    };
+
+    const handler = setTimeout(() => {
+      const currentHistory = historyRef.current;
+      const currentIndex = historyIndexRef.current;
+
+      if (currentHistory.length === 0) {
+        setHistory([currentSnapshot]);
+        setHistoryIndex(0);
+        return;
+      }
+
+      const activeHistoryState = currentHistory[currentIndex];
+      const hasChanged = !activeHistoryState || (
+        JSON.stringify(activeHistoryState.sunglassesTransform) !== JSON.stringify(sunglassesTransform) ||
+        JSON.stringify(activeHistoryState.jointTransform) !== JSON.stringify(jointTransform) ||
+        JSON.stringify(activeHistoryState.textTransform) !== JSON.stringify(textTransform) ||
+        JSON.stringify(activeHistoryState.textConfig) !== JSON.stringify(textConfig) ||
+        JSON.stringify(activeHistoryState.smokeConfig) !== JSON.stringify(smokeConfig) ||
+        activeHistoryState.isMirrored !== isMirrored ||
+        activeHistoryState.imageSrc !== imageSrc
+      );
+
+      if (hasChanged) {
+        const cleanHistory = currentHistory.slice(0, currentIndex + 1);
+        setHistory([...cleanHistory, currentSnapshot]);
+        setHistoryIndex(cleanHistory.length);
+      }
+    }, 400);
+
+    return () => clearTimeout(handler);
+  }, [
+    sunglassesTransform,
+    jointTransform,
+    textTransform,
+    textConfig,
+    smokeConfig,
+    isMirrored,
+    imageSrc
+  ]);
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      isActionFromHistory.current = true;
+      const prevIndex = historyIndex - 1;
+      setHistoryIndex(prevIndex);
+      const snapshot = history[prevIndex];
+      setImageSrc(snapshot.imageSrc);
+      setSunglassesTransform(snapshot.sunglassesTransform);
+      setJointTransform(snapshot.jointTransform);
+      setTextTransform(snapshot.textTransform);
+      setTextConfig(snapshot.textConfig);
+      setSmokeConfig(snapshot.smokeConfig);
+      setIsMirrored(snapshot.isMirrored);
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      isActionFromHistory.current = true;
+      const nextIndex = historyIndex + 1;
+      setHistoryIndex(nextIndex);
+      const snapshot = history[nextIndex];
+      setImageSrc(snapshot.imageSrc);
+      setSunglassesTransform(snapshot.sunglassesTransform);
+      setJointTransform(snapshot.jointTransform);
+      setTextTransform(snapshot.textTransform);
+      setTextConfig(snapshot.textConfig);
+      setSmokeConfig(snapshot.smokeConfig);
+      setIsMirrored(snapshot.isMirrored);
+    }
+  };
   
-  // Cache for loaded base image to make sliders 100% smooth and responsive
+  // Cache for loaded base image to make sliders 105% smooth and responsive
   const baseImageCacheRef = React.useRef<HTMLImageElement | null>(null);
   const [baseImageLoaded, setBaseImageLoaded] = useState<boolean>(false);
 
@@ -126,6 +356,29 @@ export default function App() {
     }
   };
 
+  const adjustX = (amount: number) => {
+    const current = getActiveTransform().rotateX;
+    updateActiveTransform('rotateX', Math.max(-75, Math.min(75, current + amount)));
+  };
+  const adjustY = (amount: number) => {
+    const current = getActiveTransform().rotateY;
+    updateActiveTransform('rotateY', Math.max(-75, Math.min(75, current + amount)));
+  };
+  const adjustZ = (amount: number) => {
+    const current = getActiveTransform().rotateZ;
+    updateActiveTransform('rotateZ', Math.max(-180, Math.min(180, current + amount)));
+  };
+  const adjustScale = (amount: number) => {
+    const current = getActiveTransform().scale;
+    const next = parseFloat((current + amount).toFixed(2));
+    updateActiveTransform('scale', Math.max(0.3, Math.min(3.5, next)));
+  };
+  const adjustOpacity = (amount: number) => {
+    const current = getActiveTransform().opacity ?? 1;
+    const next = parseFloat((current + amount).toFixed(2));
+    updateActiveTransform('opacity', Math.max(0.1, Math.min(1.0, next)));
+  };
+
   // High-Resolution Composite PNG compiler with support for 3D perspective projection representation
   const compileAndDownload = async () => {
     setIsExporting(true);
@@ -146,58 +399,32 @@ export default function App() {
         baseImg.src = imageSrc;
       });
 
-      // Handle custom mirrored rendering
+      // Handle custom mirrored rendering with CSS-matching object-cover crop strategy
+      const sWidthRef = baseImg.width;
+      const sHeightRef = baseImg.height;
+      const aspect = sWidthRef / sHeightRef;
+      let sx = 0;
+      let sy = 0;
+      let sw = sWidthRef;
+      let sh = sHeightRef;
+
+      if (aspect > 1) { // wider than square: crop left and right
+        sw = sHeightRef;
+        sx = (sWidthRef - sHeightRef) / 2;
+      } else if (aspect < 1) { // taller than square: crop top and bottom
+        sh = sWidthRef;
+        sy = (sHeightRef - sWidthRef) / 2;
+      }
+
       if (isMirrored) {
         ctx.save();
         ctx.translate(1200, 0);
         ctx.scale(-1, 1);
-        ctx.drawImage(baseImg, 0, 0, 1200, 1200);
+        ctx.drawImage(baseImg, sx, sy, sw, sh, 0, 0, 1200, 1200);
         ctx.restore();
       } else {
-        ctx.drawImage(baseImg, 0, 0, 1200, 1200);
+        ctx.drawImage(baseImg, sx, sy, sw, sh, 0, 0, 1200, 1200);
       }
-
-      // 2. Transcribe relative editor width coordinates to pixel coordinates
-      const drawTransformedVector = async (
-        svgMarkup: string,
-        transform: ElementTransform,
-        baseWidth: number,
-        baseHeight: number
-      ) => {
-        const img = new Image();
-        img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgMarkup);
-
-        await new Promise<void>((resolve) => {
-          img.onload = () => resolve();
-        });
-
-        ctx.save();
-        
-        // Horizontal & Vertical translate coordinates matching original scaling
-        const cx = (transform.x / 100) * 1200;
-        const cy = (transform.y / 100) * 1200;
-        
-        ctx.translate(cx, cy);
-
-        // Convert angles to radian pitch, yaw, and roll
-        const rz = (transform.rotateZ * Math.PI) / 180;
-        const ry = (transform.rotateY * Math.PI) / 180;
-        const rx = (transform.rotateX * Math.PI) / 180;
-
-        // Apply 3D math projection
-        ctx.rotate(rz);
-        ctx.scale(Math.cos(ry), Math.cos(rx));
-        
-        // Scale factor: canvas is 1200px vs display element is roughly 400px wide
-        const finalScale = transform.scale * (1200 / 400);
-        ctx.scale(finalScale, finalScale);
-        
-        ctx.globalAlpha = transform.opacity ?? 1;
-
-        // Draw centered
-        ctx.drawImage(img, -baseWidth / 2, -baseHeight / 2, baseWidth, baseHeight);
-        ctx.restore();
-      };
 
       const sunglassesMarkup = `<svg viewBox="0 0 100 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M4 4h92v4H4V4z" fill="#000000" />
@@ -223,11 +450,11 @@ export default function App() {
         </g>
       </svg>`;
 
-      // Render Sunglasses
-      await drawTransformedVector(sunglassesMarkup, sunglassesTransform, 128, 30.72);
+      // Render Sunglasses with real 3D projection
+      await drawPerspectiveVector(ctx, sunglassesMarkup, sunglassesTransform, 128, 30.72, 1200);
 
-      // Render Joint
-      await drawTransformedVector(jointMarkup, jointTransform, 124, 26.57);
+      // Render Joint with real 3D projection
+      await drawPerspectiveVector(ctx, jointMarkup, jointTransform, 124, 26.57, 1200);
 
       // Render custom designed typography
       if (textConfig.content) {
@@ -317,6 +544,7 @@ export default function App() {
       // 3. Compile output
       const url = canvas.toDataURL('image/png');
       setExportedImage(url);
+      setShowExportModal(true);
 
       // Trigger standard browser download handler
       const tempLink = document.createElement('a');
@@ -363,51 +591,32 @@ export default function App() {
 
         if (!active) return;
 
-        // Draw base photo
+        // Draw base photo with CSS-matching object-cover crop strategy
+        const sWidthRef = baseImg.width;
+        const sHeightRef = baseImg.height;
+        const aspect = sWidthRef / sHeightRef;
+        let sx = 0;
+        let sy = 0;
+        let sw = sWidthRef;
+        let sh = sHeightRef;
+
+        if (aspect > 1) { // wider
+          sw = sHeightRef;
+          sx = (sWidthRef - sHeightRef) / 2;
+        } else if (aspect < 1) { // taller
+          sh = sWidthRef;
+          sy = (sHeightRef - sWidthRef) / 2;
+        }
+
         if (isMirrored) {
           ctx.save();
           ctx.translate(400, 0);
           ctx.scale(-1, 1);
-          ctx.drawImage(baseImg, 0, 0, 400, 400);
+          ctx.drawImage(baseImg, sx, sy, sw, sh, 0, 0, 400, 400);
           ctx.restore();
         } else {
-          ctx.drawImage(baseImg, 0, 0, 400, 400);
+          ctx.drawImage(baseImg, sx, sy, sw, sh, 0, 0, 400, 400);
         }
-
-        const drawTransformedVector = async (
-          svgMarkup: string,
-          transform: ElementTransform,
-          baseWidth: number,
-          baseHeight: number
-        ) => {
-          const img = new Image();
-          img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgMarkup);
-
-          // SVGs from hardcoded strings are loaded near instantly
-          await new Promise<void>((resolve) => {
-            img.onload = () => resolve();
-          });
-
-          ctx.save();
-          const cx = (transform.x / 100) * 400;
-          const cy = (transform.y / 100) * 400;
-          ctx.translate(cx, cy);
-
-          const rz = (transform.rotateZ * Math.PI) / 180;
-          const ry = (transform.rotateY * Math.PI) / 180;
-          const rx = (transform.rotateX * Math.PI) / 180;
-
-          // Align the 3D projection matching the CSS order: scale, rotateZ, rotateX/Y
-          ctx.rotate(rz);
-          ctx.scale(Math.cos(ry), Math.cos(rx));
-          
-          const finalScale = transform.scale;
-          ctx.scale(finalScale, finalScale);
-          ctx.globalAlpha = transform.opacity ?? 1;
-
-          ctx.drawImage(img, -baseWidth / 2, -baseHeight / 2, baseWidth, baseHeight);
-          ctx.restore();
-        };
 
         const sunglassesMarkup = `<svg viewBox="0 0 100 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M4 4h92v4H4V4z" fill="#000000" />
@@ -433,8 +642,8 @@ export default function App() {
           </g>
         </svg>`;
 
-        await drawTransformedVector(sunglassesMarkup, sunglassesTransform, 128, 30.72);
-        await drawTransformedVector(jointMarkup, jointTransform, 124, 26.57);
+        await drawPerspectiveVector(ctx, sunglassesMarkup, sunglassesTransform, 128, 30.72, 400);
+        await drawPerspectiveVector(ctx, jointMarkup, jointTransform, 124, 26.57, 400);
 
         // Render typography
         if (textConfig.content) {
@@ -452,42 +661,55 @@ export default function App() {
           ctx.scale(textTransform.scale, textTransform.scale);
           ctx.globalAlpha = textTransform.opacity ?? 1;
 
-          ctx.font = `bold 12.6px "${textConfig.fontFamily}", "Impact", "Inter", sans-serif`;
+          ctx.font = `bold 38px "${textConfig.fontFamily}", "Impact", "Inter", sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
 
           let gradientFill: string | CanvasGradient = '#ffffff';
           if (textConfig.colorPreset === 'chrome') {
-            const grad = ctx.createLinearGradient(0, -6, 0, 6);
+            const grad = ctx.createLinearGradient(0, -20, 0, 20);
             grad.addColorStop(0, '#e0e7ff');
             grad.addColorStop(0.5, '#ffffff');
             grad.addColorStop(1, '#818cf8');
             gradientFill = grad;
+            ctx.shadowColor = 'rgba(139,92,246,0.85)';
+            ctx.shadowBlur = 18;
           } else if (textConfig.colorPreset === 'solar-flare') {
-            const grad = ctx.createLinearGradient(-40, 0, 40, 0);
+            const grad = ctx.createLinearGradient(-150, 0, 150, 0);
             grad.addColorStop(0, '#ef4444');
             grad.addColorStop(0.5, '#f97316');
             grad.addColorStop(1, '#facc15');
             gradientFill = grad;
+            ctx.shadowColor = 'rgba(239,68,68,0.8)';
+            ctx.shadowBlur = 18;
           } else if (textConfig.colorPreset === 'hyper-cyber') {
-            const grad = ctx.createLinearGradient(-40, 0, 40, 0);
+            const grad = ctx.createLinearGradient(-120, 0, 120, 0);
             grad.addColorStop(0, '#4ade80');
             grad.addColorStop(1, '#06b6d4');
             gradientFill = grad;
+            ctx.shadowColor = 'rgba(34,197,94,0.7)';
+            ctx.shadowBlur = 12;
           } else if (textConfig.colorPreset === 'vaporwave') {
-            const grad = ctx.createLinearGradient(-40, 0, 40, 0);
+            const grad = ctx.createLinearGradient(-120, 0, 120, 0);
             grad.addColorStop(0, '#f472b6');
             grad.addColorStop(0.5, '#c084fc');
             grad.addColorStop(1, '#22d3ee');
             gradientFill = grad;
+            ctx.shadowColor = 'rgba(219,39,119,0.75)';
+            ctx.shadowBlur = 15;
+          }
+
+          if (textConfig.glowColor && textConfig.colorPreset !== 'brutalist') {
+            ctx.shadowColor = textConfig.glowColor;
+            ctx.shadowBlur = 15;
           }
 
           if (textConfig.colorPreset === 'brutalist') {
-            ctx.lineWidth = 3;
+            ctx.lineWidth = 6;
             ctx.strokeStyle = '#000000';
             ctx.strokeText(textConfig.content, 0, 0);
           } else {
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = 4;
             ctx.strokeStyle = 'rgba(0,0,0,0.85)';
             ctx.strokeText(textConfig.content, 0, 0);
           }
@@ -566,15 +788,47 @@ export default function App() {
                 </span>
               </div>
 
-              {/* Reset to baseline button */}
-              <button
-                onClick={handleResetAlignment}
-                className="text-slate-400 hover:text-white transition-colors flex items-center gap-1 text-[11px] font-mono bg-slate-900 hover:bg-slate-800 px-2.5 py-1 rounded-full border border-slate-800"
-                title="Reset active elements to center presets"
-              >
-                <RotateCcw className="w-3 h-3" />
-                Reset Elements
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Undo Button */}
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  disabled={historyIndex <= 0}
+                  className={`flex items-center justify-center p-1.5 rounded-full border transition-all ${
+                    historyIndex > 0
+                      ? 'text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 border-slate-800 cursor-pointer active:scale-95'
+                      : 'text-slate-600 bg-slate-950/40 border-slate-900 cursor-not-allowed opacity-50'
+                  }`}
+                  title="Undo last change"
+                >
+                  <Undo className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Redo Button */}
+                <button
+                  type="button"
+                  onClick={handleRedo}
+                  disabled={historyIndex < 0 || historyIndex >= history.length - 1}
+                  className={`flex items-center justify-center p-1.5 rounded-full border transition-all ${
+                    historyIndex >= 0 && historyIndex < history.length - 1
+                      ? 'text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 border-slate-800 cursor-pointer active:scale-95'
+                      : 'text-slate-600 bg-slate-950/40 border-slate-900 cursor-not-allowed opacity-50'
+                  }`}
+                  title="Redo next change"
+                >
+                  <Redo className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Reset to baseline button */}
+                <button
+                  onClick={handleResetAlignment}
+                  className="text-slate-400 hover:text-white transition-colors flex items-center gap-1 text-[11px] font-mono bg-slate-900 hover:bg-slate-800 px-2.5 py-1 rounded-full border border-slate-800"
+                  title="Reset active elements to center presets"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Reset Elements
+                </button>
+              </div>
             </div>
 
             {/* Interactive Canvas Stage */}
@@ -731,14 +985,32 @@ export default function App() {
                   <span>Pitch (3D Vertical Tilt)</span>
                   <span className="text-emerald-400">{getActiveTransform().rotateX}°</span>
                 </div>
-                <input
-                  type="range"
-                  min="-75"
-                  max="75"
-                  value={getActiveTransform().rotateX}
-                  onChange={(e) => updateActiveTransform('rotateX', parseInt(e.target.value))}
-                  className="w-full accent-emerald-400 cursor-ew-resize opacity-90 hover:opacity-100"
-                />
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => adjustX(-5)}
+                    className="w-8 h-8 rounded-full bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold hover:text-white transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-sm select-none"
+                    title="-5°"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="range"
+                    min="-75"
+                    max="75"
+                    value={getActiveTransform().rotateX}
+                    onChange={(e) => updateActiveTransform('rotateX', parseInt(e.target.value))}
+                    className="w-full accent-emerald-400 cursor-ew-resize opacity-90 hover:opacity-100 py-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => adjustX(5)}
+                    className="w-8 h-8 rounded-full bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold hover:text-white transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-sm select-none"
+                    title="+5°"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
 
               {/* Rotate Y Slider: Yaw */}
@@ -747,14 +1019,32 @@ export default function App() {
                   <span>Yaw (3D Left/Right Rotate)</span>
                   <span className="text-emerald-400">{getActiveTransform().rotateY}°</span>
                 </div>
-                <input
-                  type="range"
-                  min="-75"
-                  max="75"
-                  value={getActiveTransform().rotateY}
-                  onChange={(e) => updateActiveTransform('rotateY', parseInt(e.target.value))}
-                  className="w-full accent-emerald-400 cursor-ew-resize opacity-90 hover:opacity-100"
-                />
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => adjustY(-5)}
+                    className="w-8 h-8 rounded-full bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold hover:text-white transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-sm select-none"
+                    title="-5°"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="range"
+                    min="-75"
+                    max="75"
+                    value={getActiveTransform().rotateY}
+                    onChange={(e) => updateActiveTransform('rotateY', parseInt(e.target.value))}
+                    className="w-full accent-emerald-400 cursor-ew-resize opacity-90 hover:opacity-100 py-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => adjustY(5)}
+                    className="w-8 h-8 rounded-full bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold hover:text-white transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-sm select-none"
+                    title="+5°"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
 
               {/* Rotate Z Slider: Roll */}
@@ -763,14 +1053,32 @@ export default function App() {
                   <span>Roll (2D Rotation Angle)</span>
                   <span className="text-emerald-400">{getActiveTransform().rotateZ}°</span>
                 </div>
-                <input
-                  type="range"
-                  min="-180"
-                  max="180"
-                  value={getActiveTransform().rotateZ}
-                  onChange={(e) => updateActiveTransform('rotateZ', parseInt(e.target.value))}
-                  className="w-full accent-emerald-400 cursor-ew-resize opacity-90 hover:opacity-100"
-                />
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => adjustZ(-5)}
+                    className="w-8 h-8 rounded-full bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold hover:text-white transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-sm select-none"
+                    title="-5°"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="range"
+                    min="-180"
+                    max="180"
+                    value={getActiveTransform().rotateZ}
+                    onChange={(e) => updateActiveTransform('rotateZ', parseInt(e.target.value))}
+                    className="w-full accent-emerald-400 cursor-ew-resize opacity-90 hover:opacity-100 py-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => adjustZ(5)}
+                    className="w-8 h-8 rounded-full bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold hover:text-white transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-sm select-none"
+                    title="+5°"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
 
               {/* Scale Slider */}
@@ -779,15 +1087,33 @@ export default function App() {
                   <span>Size (Scale)</span>
                   <span className="text-emerald-400">{getActiveTransform().scale.toFixed(2)}x</span>
                 </div>
-                <input
-                  type="range"
-                  min="0.3"
-                  max="3.5"
-                  step="0.05"
-                  value={getActiveTransform().scale}
-                  onChange={(e) => updateActiveTransform('scale', parseFloat(e.target.value))}
-                  className="w-full accent-emerald-400 cursor-ew-resize opacity-90 hover:opacity-100"
-                />
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => adjustScale(-0.1)}
+                    className="w-8 h-8 rounded-full bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold hover:text-white transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-sm select-none"
+                    title="-0.1x"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="range"
+                    min="0.3"
+                    max="3.5"
+                    step="0.05"
+                    value={getActiveTransform().scale}
+                    onChange={(e) => updateActiveTransform('scale', parseFloat(e.target.value))}
+                    className="w-full accent-emerald-400 cursor-ew-resize opacity-90 hover:opacity-100 py-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => adjustScale(0.1)}
+                    className="w-8 h-8 rounded-full bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold hover:text-white transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-sm select-none"
+                    title="+0.1x"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
 
               {/* Opacity Slider */}
@@ -796,15 +1122,33 @@ export default function App() {
                   <span>Opacity</span>
                   <span className="text-emerald-400">{Math.round((getActiveTransform().opacity ?? 1) * 100)}%</span>
                 </div>
-                <input
-                  type="range"
-                  min="0.1"
-                  max="1.0"
-                  step="0.05"
-                  value={getActiveTransform().opacity ?? 1}
-                  onChange={(e) => updateActiveTransform('opacity', parseFloat(e.target.value))}
-                  className="w-full accent-emerald-400 cursor-ew-resize opacity-90 hover:opacity-100"
-                />
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => adjustOpacity(-0.1)}
+                    className="w-8 h-8 rounded-full bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold hover:text-white transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-sm select-none"
+                    title="-10%"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1.0"
+                    step="0.05"
+                    value={getActiveTransform().opacity ?? 1}
+                    onChange={(e) => updateActiveTransform('opacity', parseFloat(e.target.value))}
+                    className="w-full accent-emerald-400 cursor-ew-resize opacity-90 hover:opacity-100 py-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => adjustOpacity(0.1)}
+                    className="w-8 h-8 rounded-full bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold hover:text-white transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-sm select-none"
+                    title="+10%"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             </div>
           </section>
@@ -984,18 +1328,115 @@ export default function App() {
 
       {/* FOOTER */}
       <footer className="bg-slate-950 border-t border-slate-900/60 mt-12 py-8 text-center text-xs text-slate-500 font-mono">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-center gap-4">
           <span>🛸 Smokefleet Workshop © 2026</span>
-          <div className="flex gap-4">
-            <a href="https://github.com" target="_blank" rel="noreferrer" className="hover:text-slate-350 transition-colors">
-              GitHub Profile Linker
-            </a>
-            <a href="https://x.com" target="_blank" rel="noreferrer" className="hover:text-slate-350 transition-colors">
-              X/Twitter Previewer
-            </a>
-          </div>
         </div>
       </footer>
+
+      {/* Export Modal for Mobile Downloading support */}
+      <AnimatePresence>
+        {showExportModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto"
+            onClick={() => setShowExportModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 max-w-md w-full shadow-2xl flex flex-col gap-4 md:gap-5 relative my-auto max-h-[95vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Top Close Button (for desktop / large viewports) */}
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-850 hover:bg-slate-800 p-2 rounded-full border border-slate-750 transition-colors cursor-pointer"
+                title="Close overlay"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="text-center pt-2 md:pt-4">
+                <span className="inline-block bg-emerald-500/10 text-emerald-400 text-[10px] font-mono uppercase border border-emerald-500/20 px-2.5 py-1 rounded-full mb-1.5">
+                  Image Rendered!
+                </span>
+                <h3 className="font-sans font-black text-white text-base md:text-lg leading-tight uppercase">
+                  Your High-Res Avatar
+                </h3>
+              </div>
+
+              {/* High-res Image Preview */}
+              <div className="relative aspect-square w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center shadow-inner group max-h-[300px] md:max-h-full">
+                {exportedImage ? (
+                  <img
+                    src={exportedImage}
+                    alt="Smokefleet High-Res PFP"
+                    className="w-full h-full object-contain cursor-pointer"
+                    referrerPolicy="no-referrer"
+                    onClick={() => {
+                      // Attempt download on click
+                      const tempLink = document.createElement('a');
+                      tempLink.download = `smokefleet-pfp-${Date.now()}.png`;
+                      tempLink.href = exportedImage;
+                      tempLink.click();
+                    }}
+                  />
+                ) : (
+                  <div className="text-slate-500 text-xs font-mono">Generating render ...</div>
+                )}
+                {/* Visual hint on image hover/tap */}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/80 to-transparent p-2 md:p-3 text-center pointer-events-none">
+                  <span className="text-[9px] md:text-[10px] font-sans text-slate-300 font-semibold uppercase tracking-wider">
+                    👆 Tap &amp; Hold to Save Image
+                  </span>
+                </div>
+              </div>
+
+              {/* Instructions Callout */}
+              <div className="bg-slate-950 border border-slate-850 p-3 md:p-4 rounded-xl flex flex-col gap-1.5 text-xs text-slate-350 leading-relaxed font-sans">
+                <div className="flex items-center gap-1.5 font-bold text-slate-200">
+                  <Shield className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>How to Save:</span>
+                </div>
+                <div className="space-y-1 text-slate-450 text-[10px] md:text-[11px] leading-normal">
+                  <p><strong className="text-white">📱 Mobile / Tablets:</strong> Tap and hold (long press) the image above and select <span className="text-emerald-400 font-bold">"Save Image"</span>.</p>
+                  <p><strong className="text-white">💻 Computer:</strong> Right-click and choose <span className="text-emerald-400 font-bold">"Save Image As..."</span>, or click the download button below.</p>
+                </div>
+              </div>
+
+              {/* Highly Accessible Dual Action Button Bar at Bottom */}
+              <div className="flex flex-col sm:flex-row gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (exportedImage) {
+                      const tempLink = document.createElement('a');
+                      tempLink.download = `smokefleet-pfp-${Date.now()}.png`;
+                      tempLink.href = exportedImage;
+                      tempLink.click();
+                    }
+                  }}
+                  className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-sans font-bold text-xs py-3 md:py-3.5 rounded-xl flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <Download className="w-4 h-4 stroke-[2.5]" />
+                  Download File
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowExportModal(false)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-750 text-slate-200 font-sans font-bold text-xs py-3 md:py-3.5 rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Close Overlay
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
