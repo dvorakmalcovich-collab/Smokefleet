@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { ElementTransform, SelectedElementType, SmokeConfig, TextConfig } from '../types';
+import { ElementTransform, SelectedElementType, SmokeConfig, TextConfig, ErasePath } from '../types';
 import { SunglassesSVG, JointSVG } from './AssetsSVG';
 import JointSmoke from './JointSmoke';
 
@@ -12,11 +12,23 @@ interface EditableCanvasProps {
   textConfig: TextConfig;
   smokeConfig: SmokeConfig;
   showTwitterMask: boolean;
+  sunglassesErasePaths: ErasePath[];
+  jointErasePaths: ErasePath[];
   onUpdateSunglasses: (t: ElementTransform) => void;
   onUpdateJoint: (t: ElementTransform) => void;
   onUpdateText: (t: ElementTransform) => void;
   setSelectedElement: (type: SelectedElementType) => void;
 }
+
+// Convert absolute points to SVG path format string
+const getSvgPathData = (points: { x: number; y: number }[]) => {
+  if (points.length === 0) return '';
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    d += ` L ${points[i].x} ${points[i].y}`;
+  }
+  return d;
+};
 
 export default function EditableCanvas({
   imageSrc,
@@ -27,6 +39,8 @@ export default function EditableCanvas({
   textConfig,
   smokeConfig,
   showTwitterMask,
+  sunglassesErasePaths,
+  jointErasePaths,
   onUpdateSunglasses,
   onUpdateJoint,
   onUpdateText,
@@ -227,7 +241,31 @@ export default function EditableCanvas({
           id="sunglasses-overlay"
           title="Drag to move. Scroll wheel to rotate."
         >
-          <SunglassesSVG />
+          <svg
+            viewBox="0 0 100 24"
+            className="w-full h-full select-none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <defs>
+              <mask id="sunglasses-interact-mask">
+                <rect x="0" y="0" width="100" height="24" fill="white" />
+                {sunglassesErasePaths.map((path, idx) => (
+                  <path
+                    key={idx}
+                    d={getSvgPathData(path.points)}
+                    stroke="black"
+                    strokeWidth={path.brushSize}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                ))}
+              </mask>
+            </defs>
+            <g mask="url(#sunglasses-interact-mask)">
+              <SunglassesSVG />
+            </g>
+          </svg>
         </div>
       )}
 
@@ -262,7 +300,31 @@ export default function EditableCanvas({
           id="joint-overlay"
           title="Drag to move. Scroll wheel to rotate."
         >
-          <JointSVG />
+          <svg
+            viewBox="0 0 140 30"
+            className="w-full h-full select-none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <defs>
+              <mask id="joint-interact-mask">
+                <rect x="0" y="0" width="140" height="30" fill="white" />
+                {jointErasePaths.map((path, idx) => (
+                  <path
+                    key={idx}
+                    d={getSvgPathData(path.points)}
+                    stroke="black"
+                    strokeWidth={path.brushSize}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                ))}
+              </mask>
+            </defs>
+            <g mask="url(#joint-interact-mask)">
+              <JointSVG />
+            </g>
+          </svg>
         </div>
       )}
 

@@ -21,9 +21,10 @@ import {
   Redo
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ElementTransform, SelectedElementType, SmokeConfig, TextConfig, AppStateSnapshot } from './types';
+import { ElementTransform, SelectedElementType, SmokeConfig, TextConfig, AppStateSnapshot, ErasePath } from './types';
 import EditableCanvas from './components/EditableCanvas';
 import TwitterPreview from './components/TwitterPreview';
+import EraserCanvas from './components/EraserCanvas';
 
 // High-Fidelity 3D Perspective Projection Slices Renderer
 const drawPerspectiveVector = async (
@@ -32,7 +33,8 @@ const drawPerspectiveVector = async (
   transform: ElementTransform,
   baseWidth: number,
   baseHeight: number,
-  canvasSize: number
+  canvasSize: number,
+  erasePaths?: ErasePath[]
 ) => {
   const img = new Image();
   img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgMarkup);
@@ -60,6 +62,29 @@ const drawPerspectiveVector = async (
     return;
   }
   oCtx.drawImage(img, 0, 0, offscreen.width, offscreen.height);
+
+  // Apply eraser custom mask lines over the flat vector offscreen canvas
+  if (erasePaths && erasePaths.length > 0) {
+    oCtx.save();
+    // Map viewBox coordinates (100x24 for Sunglasses, 140x30 for Joint) to renderScale dimensions
+    const scaleFactor = (baseWidth * renderScale) / (baseWidth === 128 ? 100 : 140);
+    oCtx.scale(scaleFactor, scaleFactor);
+    oCtx.globalCompositeOperation = 'destination-out';
+
+    for (const path of erasePaths) {
+      if (path.points.length === 0) continue;
+      oCtx.beginPath();
+      oCtx.lineWidth = path.brushSize;
+      oCtx.lineCap = 'round';
+      oCtx.lineJoin = 'round';
+      oCtx.moveTo(path.points[0].x, path.points[0].y);
+      for (let i = 1; i < path.points.length; i++) {
+        oCtx.lineTo(path.points[i].x, path.points[i].y);
+      }
+      oCtx.stroke();
+    }
+    oCtx.restore();
+  }
 
   // Translate to the element's position
   const cx = (transform.x / 100) * canvasSize;
@@ -161,6 +186,11 @@ export default function App() {
     x: 50, y: 80, scale: 1.0, rotateX: 0, rotateY: 0, rotateZ: 0, opacity: 1
   });
 
+  // 3D Masking/Eraser Paths
+  const [sunglassesErasePaths, setSunglassesErasePaths] = useState<ErasePath[]>([]);
+  const [jointErasePaths, setJointErasePaths] = useState<ErasePath[]>([]);
+  const [eraserBrushSize, setEraserBrushSize] = useState<number>(6);
+
   // Active Element Focus
   const [selectedElement, setSelectedElement] = useState<SelectedElementType>('sunglasses');
 
@@ -218,7 +248,9 @@ export default function App() {
       textConfig,
       smokeConfig,
       isMirrored,
-      imageSrc
+      imageSrc,
+      sunglassesErasePaths,
+      jointErasePaths,
     };
 
     const handler = setTimeout(() => {
@@ -239,7 +271,9 @@ export default function App() {
         JSON.stringify(activeHistoryState.textConfig) !== JSON.stringify(textConfig) ||
         JSON.stringify(activeHistoryState.smokeConfig) !== JSON.stringify(smokeConfig) ||
         activeHistoryState.isMirrored !== isMirrored ||
-        activeHistoryState.imageSrc !== imageSrc
+        activeHistoryState.imageSrc !== imageSrc ||
+        JSON.stringify(activeHistoryState.sunglassesErasePaths) !== JSON.stringify(sunglassesErasePaths) ||
+        JSON.stringify(activeHistoryState.jointErasePaths) !== JSON.stringify(jointErasePaths)
       );
 
       if (hasChanged) {
@@ -257,7 +291,9 @@ export default function App() {
     textConfig,
     smokeConfig,
     isMirrored,
-    imageSrc
+    imageSrc,
+    sunglassesErasePaths,
+    jointErasePaths,
   ]);
 
   const handleUndo = () => {
@@ -273,6 +309,8 @@ export default function App() {
       setTextConfig(snapshot.textConfig);
       setSmokeConfig(snapshot.smokeConfig);
       setIsMirrored(snapshot.isMirrored);
+      setSunglassesErasePaths(snapshot.sunglassesErasePaths || []);
+      setJointErasePaths(snapshot.jointErasePaths || []);
     }
   };
 
@@ -289,6 +327,8 @@ export default function App() {
       setTextConfig(snapshot.textConfig);
       setSmokeConfig(snapshot.smokeConfig);
       setIsMirrored(snapshot.isMirrored);
+      setSunglassesErasePaths(snapshot.sunglassesErasePaths || []);
+      setJointErasePaths(snapshot.jointErasePaths || []);
     }
   };
   
@@ -451,10 +491,10 @@ export default function App() {
       </svg>`;
 
       // Render Sunglasses with real 3D projection
-      await drawPerspectiveVector(ctx, sunglassesMarkup, sunglassesTransform, 128, 30.72, 1200);
+      await drawPerspectiveVector(ctx, sunglassesMarkup, sunglassesTransform, 128, 30.72, 1200, sunglassesErasePaths);
 
       // Render Joint with real 3D projection
-      await drawPerspectiveVector(ctx, jointMarkup, jointTransform, 124, 26.57, 1200);
+      await drawPerspectiveVector(ctx, jointMarkup, jointTransform, 124, 26.57, 1200, jointErasePaths);
 
       // Render custom designed typography
       if (textConfig.content) {
@@ -642,8 +682,8 @@ export default function App() {
           </g>
         </svg>`;
 
-        await drawPerspectiveVector(ctx, sunglassesMarkup, sunglassesTransform, 128, 30.72, 400);
-        await drawPerspectiveVector(ctx, jointMarkup, jointTransform, 124, 26.57, 400);
+        await drawPerspectiveVector(ctx, sunglassesMarkup, sunglassesTransform, 128, 30.72, 400, sunglassesErasePaths);
+        await drawPerspectiveVector(ctx, jointMarkup, jointTransform, 124, 26.57, 400, jointErasePaths);
 
         // Render typography
         if (textConfig.content) {
@@ -841,6 +881,8 @@ export default function App() {
               textConfig={textConfig}
               smokeConfig={smokeConfig}
               showTwitterMask={showTwitterMask}
+              sunglassesErasePaths={sunglassesErasePaths}
+              jointErasePaths={jointErasePaths}
               onUpdateSunglasses={setSunglassesTransform}
               onUpdateJoint={setJointTransform}
               onUpdateText={setTextTransform}
@@ -1150,6 +1192,31 @@ export default function App() {
                   </button>
                 </div>
               </div>
+
+              {/* Optional 3D Eraser Workspace for active elements */}
+              {(selectedElement === 'sunglasses' || selectedElement === 'joint') && (
+                <div className="pt-4 border-t border-slate-900 mt-4">
+                  <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-1">
+                    <span>Eraser Brush Size</span>
+                    <span className="text-emerald-400">{eraserBrushSize}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="2"
+                    max="18"
+                    step="1"
+                    value={eraserBrushSize}
+                    onChange={(e) => setEraserBrushSize(parseInt(e.target.value))}
+                    className="w-full accent-emerald-400 cursor-ew-resize opacity-90 hover:opacity-100 py-1 mb-2"
+                  />
+                  <EraserCanvas
+                    elementType={selectedElement}
+                    erasePaths={selectedElement === 'sunglasses' ? sunglassesErasePaths : jointErasePaths}
+                    onChangeErasePaths={selectedElement === 'sunglasses' ? setSunglassesErasePaths : setJointErasePaths}
+                    brushSize={eraserBrushSize}
+                  />
+                </div>
+              )}
             </div>
           </section>
 

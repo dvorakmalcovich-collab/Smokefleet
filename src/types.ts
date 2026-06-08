@@ -40,6 +40,16 @@ export interface TextGradientPreset {
   shadow: string;
 }
 
+export interface ErasePoint {
+  x: number; // percentage from 0 to 100 within elements 2D bounding box
+  y: number; // percentage from 0 to 100 within elements 2D bounding box
+}
+
+export interface ErasePath {
+  points: ErasePoint[];
+  brushSize: number; // relative brush size percentage (e.g., 2% to 20%)
+}
+
 export interface AppStateSnapshot {
   sunglassesTransform: ElementTransform;
   jointTransform: ElementTransform;
@@ -48,5 +58,7 @@ export interface AppStateSnapshot {
   smokeConfig: SmokeConfig;
   isMirrored: boolean;
   imageSrc: string;
+  sunglassesErasePaths: ErasePath[];
+  jointErasePaths: ErasePath[];
 }
 
