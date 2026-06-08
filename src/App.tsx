@@ -561,6 +561,9 @@ export default function App() {
         if (textConfig.glowColor && textConfig.colorPreset !== 'brutalist') {
           ctx.shadowColor = textConfig.glowColor;
           ctx.shadowBlur = 16;
+        } else {
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
         }
 
         ctx.fillStyle = gradientFill;
@@ -742,6 +745,9 @@ export default function App() {
           if (textConfig.glowColor && textConfig.colorPreset !== 'brutalist') {
             ctx.shadowColor = textConfig.glowColor;
             ctx.shadowBlur = 15;
+          } else {
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
           }
 
           if (textConfig.colorPreset === 'brutalist') {
@@ -1307,7 +1313,14 @@ export default function App() {
                   ].map((style) => (
                     <button
                       key={style.key}
-                      onClick={() => setTextConfig({ ...textConfig, colorPreset: style.key })}
+                      onClick={() => {
+                        let finalGlow = '#22d3ee';
+                        if (style.key === 'chrome') finalGlow = 'rgba(139,92,246,0.85)';
+                        else if (style.key === 'solar-flare') finalGlow = 'rgba(239,68,68,0.8)';
+                        else if (style.key === 'vaporwave') finalGlow = 'rgba(219,39,119,0.75)';
+                        else if (style.key === 'brutalist') finalGlow = '';
+                        setTextConfig({ ...textConfig, colorPreset: style.key, glowColor: finalGlow });
+                      }}
                       className={`p-2 rounded-xl text-center border font-sans text-xs flex justify-center items-center transition-all min-h-[40px] ${
                         textConfig.colorPreset === style.key
                           ? 'bg-slate-900 border-cyan-400 text-white font-bold'
