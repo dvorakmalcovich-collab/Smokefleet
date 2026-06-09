@@ -1,6 +1,6 @@
 {
-  "name": "Smokefleet",
-  "description": "Welcome to Smokefleet! Use this tool to pimp your profile picture with real perspective 3D sunglasses, smoky joints, and savage custom typography in seconds. 🚬🕶️",
+  "name": "#SMOKEFLEET AVATAR MAKER",
+  "description": "create your own smokefleet avatar, 100% AI-free",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

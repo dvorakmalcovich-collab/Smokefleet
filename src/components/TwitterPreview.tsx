@@ -70,14 +70,21 @@ export default function TwitterPreview({ imageSrc }: TwitterPreviewProps) {
           <p className="text-sm font-sans text-slate-400">@smokefleet_anon</p>
 
           {/* User Bio */}
-          <p className="mt-3 text-sm font-sans text-slate-200 leading-relaxed">
-            Floating through the metaverse with the <span className="text-emerald-400">#smokefleet</span> pilot crew. 💨 3D shades aligned, offline-capable starterkit avatar.
+          <p className="mt-3 text-sm font-sans text-slate-205 leading-relaxed">
+            Floating through the cosmos. If your digital avatar isn't compiling uncropped smoke trails and vector overlays inside the local browser context, your <span className="text-emerald-400 font-medium">#smokefleet</span> pilot cred is absolute zero. Stop larpping on <a href="https://smokefleet.org" target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline hover:text-emerald-305 transition-colors">smokefleet.org</a> and gear up. 🛸💨
           </p>
 
           {/* Metadata */}
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono text-slate-400">
-            <span>📍 Cosmic Orbit</span>
-            <span>🔗 smokefleet.xyz</span>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs font-mono text-slate-400 items-center">
+            <span>📍 Inside Elmo's head</span>
+            <a 
+              href="https://smokefleet.org" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-emerald-400 hover:underline flex items-center gap-0.5 transition-colors"
+            >
+              🔗 smokefleet.org
+            </a>
             <span>📅 Joined June 2026</span>
           </div>
 
@@ -105,7 +112,7 @@ export default function TwitterPreview({ imageSrc }: TwitterPreviewProps) {
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="w-full h-full bg-slate-800" />
+              <div className="w-full h-full bg-slate-805" />
             )}
           </div>
           <div className="flex-1">
@@ -115,7 +122,7 @@ export default function TwitterPreview({ imageSrc }: TwitterPreviewProps) {
               <span className="text-slate-500">· 1m</span>
             </div>
             <p className="text-sm font-sans text-slate-200 mt-1 leading-relaxed">
-              Just generated my official <strong className="text-emerald-400 font-semibold">#smokefleet</strong> starter kit PFP! Built-in 3D angles, full offline PWA action. Rate my drip! 👇🛸💨
+              Hello #smokefleet muchacho's and muchachas, I'm here to join the fleet and kick some ass!
             </p>
             
             {/* Simulated Action Stats */}

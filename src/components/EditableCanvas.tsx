@@ -5,6 +5,7 @@ import JointSmoke from './JointSmoke';
 
 interface EditableCanvasProps {
   imageSrc: string;
+  imageTransform: ElementTransform;
   sunglassesTransform: ElementTransform;
   jointTransform: ElementTransform;
   textTransform: ElementTransform;
@@ -14,10 +15,14 @@ interface EditableCanvasProps {
   showTwitterMask: boolean;
   sunglassesErasePaths: ErasePath[];
   jointErasePaths: ErasePath[];
+  onUpdateImage: (t: ElementTransform) => void;
   onUpdateSunglasses: (t: ElementTransform) => void;
   onUpdateJoint: (t: ElementTransform) => void;
   onUpdateText: (t: ElementTransform) => void;
   setSelectedElement: (type: SelectedElementType) => void;
+  isMirrored?: boolean;
+  sunglassesStyle?: 'classic' | 'aviator' | 'goggles';
+  jointStyle?: 'classic' | 'cigar' | 'cone';
 }
 
 // Convert absolute points to SVG path format string
@@ -32,6 +37,7 @@ const getSvgPathData = (points: { x: number; y: number }[]) => {
 
 export default function EditableCanvas({
   imageSrc,
+  imageTransform,
   sunglassesTransform,
   jointTransform,
   textTransform,
@@ -41,13 +47,28 @@ export default function EditableCanvas({
   showTwitterMask,
   sunglassesErasePaths,
   jointErasePaths,
+  onUpdateImage,
   onUpdateSunglasses,
   onUpdateJoint,
   onUpdateText,
   setSelectedElement,
+  isMirrored,
+  sunglassesStyle = 'classic',
+  jointStyle = 'classic',
 }: EditableCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const dragStartRef = useRef<{ offsetX: number; offsetY: number; type: SelectedElementType } | null>(null);
+  const dragStartRef = useRef<{
+    offsetX: number;
+    offsetY: number;
+    type: SelectedElementType;
+    mode: 'move' | 'scale' | 'rotate';
+    startX: number;
+    startY: number;
+    startScale: number;
+    startRotate: number;
+    startDist: number;
+    startAngle: number;
+  } | null>(null);
   const [parentSize, setParentSize] = useState({ width: 0, height: 0 });
 
   // Watch container resize for relative coordinate calculations
@@ -85,7 +106,9 @@ export default function EditableCanvas({
         ? sunglassesTransform
         : type === 'joint'
         ? jointTransform
-        : textTransform;
+        : type === 'text'
+        ? textTransform
+        : imageTransform;
 
     const elXInPx = rect.left + (currentTransform.x / 100) * rect.width;
     const elYInPx = rect.top + (currentTransform.y / 100) * rect.height;
@@ -94,12 +117,57 @@ export default function EditableCanvas({
       offsetX: clientX - elXInPx,
       offsetY: clientY - elYInPx,
       type,
+      mode: 'move',
+      startX: clientX,
+      startY: clientY,
+      startScale: currentTransform.scale,
+      startRotate: currentTransform.rotateZ,
+      startDist: 1,
+      startAngle: 0,
+    };
+  };
+
+  const handleStartTransform = (e: React.PointerEvent, type: SelectedElementType, mode: 'scale' | 'rotate') => {
+    e.stopPropagation();
+    e.preventDefault();
+    setSelectedElement(type);
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const currentTransform =
+      type === 'sunglasses'
+        ? sunglassesTransform
+        : type === 'joint'
+        ? jointTransform
+        : type === 'text'
+        ? textTransform
+        : imageTransform;
+
+    const cx = rect.left + (currentTransform.x / 100) * rect.width;
+    const cy = rect.top + (currentTransform.y / 100) * rect.height;
+
+    const startDist = Math.sqrt(Math.pow(e.clientX - cx, 2) + Math.pow(e.clientY - cy, 2));
+    const startAngleRad = Math.atan2(e.clientY - cy, e.clientX - cx);
+    const startAngleDeg = (startAngleRad * 180) / Math.PI;
+
+    dragStartRef.current = {
+      offsetX: 0,
+      offsetY: 0,
+      type,
+      mode,
+      startX: e.clientX,
+      startY: e.clientY,
+      startScale: currentTransform.scale,
+      startRotate: currentTransform.rotateZ,
+      startDist: startDist > 0 ? startDist : 1,
+      startAngle: startAngleDeg,
     };
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!dragStartRef.current) return;
-    const { type, offsetX, offsetY } = dragStartRef.current;
+    const { type, mode, offsetX, offsetY, startScale, startRotate, startDist, startAngle } = dragStartRef.current;
 
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -107,19 +175,60 @@ export default function EditableCanvas({
     const clientX = e.clientX;
     const clientY = e.clientY;
 
-    // Relative percentage of canvas
-    let newX = ((clientX - offsetX - rect.left) / rect.width) * 100;
-    let newY = ((clientY - offsetY - rect.top) / rect.height) * 100;
+    const currentTransform =
+      type === 'sunglasses'
+        ? sunglassesTransform
+        : type === 'joint'
+        ? jointTransform
+        : type === 'text'
+        ? textTransform
+        : imageTransform;
 
-    newX = Math.max(-20, Math.min(120, newX));
-    newY = Math.max(-20, Math.min(120, newY));
+    const onUpdate =
+      type === 'sunglasses'
+        ? onUpdateSunglasses
+        : type === 'joint'
+        ? onUpdateJoint
+        : type === 'text'
+        ? onUpdateText
+        : onUpdateImage;
 
-    if (type === 'sunglasses') {
-      onUpdateSunglasses({ ...sunglassesTransform, x: newX, y: newY });
-    } else if (type === 'joint') {
-      onUpdateJoint({ ...jointTransform, x: newX, y: newY });
-    } else if (type === 'text') {
-      onUpdateText({ ...textTransform, x: newX, y: newY });
+    if (mode === 'move') {
+      // Relative percentage of canvas
+      let newX = ((clientX - offsetX - rect.left) / rect.width) * 100;
+      let newY = ((clientY - offsetY - rect.top) / rect.height) * 100;
+
+      newX = Math.max(-100, Math.min(200, newX));
+      newY = Math.max(-100, Math.min(200, newY));
+
+      onUpdate({ ...currentTransform, x: newX, y: newY });
+    } else if (mode === 'scale') {
+      // Scale based on distance ratio from center
+      const cx = rect.left + (currentTransform.x / 100) * rect.width;
+      const cy = rect.top + (currentTransform.y / 100) * rect.height;
+      const dist = Math.sqrt(Math.pow(clientX - cx, 2) + Math.pow(clientY - cy, 2));
+      
+      let newScale = startScale * (dist / startDist);
+      newScale = Math.max(0.15, Math.min(4.5, newScale));
+
+      onUpdate({ ...currentTransform, scale: newScale });
+    } else if (mode === 'rotate') {
+      // Rotate based on angle difference around center
+      const cx = rect.left + (currentTransform.x / 100) * rect.width;
+      const cy = rect.top + (currentTransform.y / 100) * rect.height;
+      
+      const angleRad = Math.atan2(clientY - cy, clientX - cx);
+      const angleDeg = (angleRad * 180) / Math.PI;
+
+      let deltaAngle = angleDeg - startAngle;
+      
+      // Normalize angle difference to avoid wrap-around jumps
+      if (deltaAngle > 180) deltaAngle -= 360;
+      if (deltaAngle < -180) deltaAngle += 360;
+
+      const newRotate = (startRotate + deltaAngle) % 360;
+
+      onUpdate({ ...currentTransform, rotateZ: newRotate });
     }
   };
 
@@ -189,23 +298,38 @@ export default function EditableCanvas({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
-      onClick={() => setSelectedElement(null)}
+      onClick={() => setSelectedElement('background')}
       className="relative w-full aspect-square bg-slate-900 rounded-2xl overflow-hidden cursor-crosshair border border-slate-800 touch-none shadow-inner group-hover:border-slate-700/60 transition-all"
       id="smokefleet-editable-stage"
     >
-      {/* Background Face Image */}
+      {/* Background Face Image Box */}
       {imageSrc ? (
-        <img
-          src={imageSrc}
-          alt="Editable Face Photo"
-          className="w-full h-full object-cover select-none pointer-events-none"
-          referrerPolicy="no-referrer"
-        />
+        <div
+          onPointerDown={(e) => handlePointerDown(e, 'background')}
+          className={`w-full h-full select-none absolute inset-0 overflow-hidden cursor-move ${
+            selectedElement === 'background' ? 'ring-2 ring-indigo-500/50' : ''
+          }`}
+          id="background-canvas-box"
+        >
+          <img
+            src={imageSrc}
+            alt="Editable Face Photo"
+            className="w-full h-full object-cover select-none pointer-events-none"
+            style={{
+              transform: `translate(${imageTransform.x - 50}%, ${imageTransform.y - 50}%) scale(${imageTransform.scale}) ${isMirrored ? 'scaleX(-1)' : ''}`,
+              transformOrigin: 'center center',
+            }}
+            referrerPolicy="no-referrer"
+          />
+        </div>
       ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 p-4 font-sans text-center">
-          <p className="font-semibold text-lg text-slate-300">No photo uploaded</p>
-          <p className="text-xs mt-1 text-slate-500 max-w-xs">
-            Drop your selfie or tap a preset to bootstrap your Smokefleet starterkit.
+        <div
+          onClick={(e) => { e.stopPropagation(); setSelectedElement('background'); }}
+          className="w-full h-full flex flex-col items-center justify-center text-slate-500 p-4 font-sans text-center bg-slate-900"
+        >
+          <p className="font-semibold text-sm text-slate-300">No profile photo uploaded yet</p>
+          <p className="text-[11px] mt-1 text-slate-500 max-w-xs leading-normal">
+            Upload your picture or drag it below to build your original pilot avatar.
           </p>
         </div>
       )}
@@ -214,6 +338,7 @@ export default function EditableCanvas({
       {imageSrc && (
         <div
           onPointerDown={(e) => handlePointerDown(e, 'sunglasses')}
+          onClick={(e) => e.stopPropagation()}
           onWheel={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -239,7 +364,7 @@ export default function EditableCanvas({
             opacity: sunglassesTransform.opacity ?? 1,
           }}
           id="sunglasses-overlay"
-          title="Drag to move. Scroll wheel to rotate."
+          title="Drag to move. Drag corners to scale. Drag top node to rotate."
         >
           <svg
             viewBox="0 0 100 24"
@@ -263,9 +388,59 @@ export default function EditableCanvas({
               </mask>
             </defs>
             <g mask="url(#sunglasses-interact-mask)">
-              <SunglassesSVG />
+              <SunglassesSVG variant={sunglassesStyle} />
             </g>
           </svg>
+
+          {/* Interactive Bounding Box & Transform Handles (Photoshop style) */}
+          {selectedElement === 'sunglasses' && (
+            <>
+              {/* Bounding box outline */}
+              <div className="absolute -inset-2 border border-dashed border-emerald-400 pointer-events-none rounded z-50" />
+
+              {/* Angle indicator box on hover/drag */}
+              <div className="absolute -top-14 left-1/2 -translate-x-1/2 bg-slate-950/90 border border-slate-800 text-emerald-400 font-mono px-1.5 py-0.5 rounded text-[9px] pointer-events-none z-55 whitespace-nowrap shadow-lg">
+                R: {Math.round(sunglassesTransform.rotateZ)}° / S: {sunglassesTransform.scale.toFixed(2)}x
+              </div>
+
+              {/* Center rotation line extension */}
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-[1px] h-4 bg-emerald-400/80 pointer-events-none z-50" />
+
+              {/* Rotator Handle dial at top */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'sunglasses', 'rotate')}
+                className="w-3.5 h-3.5 bg-emerald-400 border-2 border-white rounded-full absolute -top-7.5 left-1/2 -translate-x-1/2 cursor-alias z-55 pointer-events-auto shadow-md hover:bg-white active:scale-125 transition-all flex items-center justify-center"
+                title="Drag to rotate"
+              >
+                <div className="w-1.5 h-1.5 bg-slate-950 rounded-full" />
+              </div>
+
+              {/* Corner Scale Coordinates Handle (Top Left) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'sunglasses', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -top-3.5 -left-3.5 cursor-nwse-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+              {/* Corner Scale Coordinates Handle (Top Right) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'sunglasses', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -top-3.5 -right-3.5 cursor-nesw-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+              {/* Corner Scale Coordinates Handle (Bottom Left) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'sunglasses', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -bottom-3.5 -left-3.5 cursor-nesw-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+              {/* Corner Scale Coordinates Handle (Bottom Right) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'sunglasses', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -bottom-3.5 -right-3.5 cursor-nwse-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -273,6 +448,7 @@ export default function EditableCanvas({
       {imageSrc && (
         <div
           onPointerDown={(e) => handlePointerDown(e, 'joint')}
+          onClick={(e) => e.stopPropagation()}
           onWheel={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -298,7 +474,7 @@ export default function EditableCanvas({
             opacity: jointTransform.opacity ?? 1,
           }}
           id="joint-overlay"
-          title="Drag to move. Scroll wheel to rotate."
+          title="Drag to move. Drag corners to scale. Drag top node to rotate."
         >
           <svg
             viewBox="0 0 140 30"
@@ -322,9 +498,59 @@ export default function EditableCanvas({
               </mask>
             </defs>
             <g mask="url(#joint-interact-mask)">
-              <JointSVG />
+              <JointSVG variant={jointStyle} />
             </g>
           </svg>
+
+          {/* Interactive Bounding Box & Transform Handles (Photoshop style) */}
+          {selectedElement === 'joint' && (
+            <>
+              {/* Bounding box outline */}
+              <div className="absolute -inset-2 border border-dashed border-emerald-400 pointer-events-none rounded z-50" />
+
+              {/* Angle indicator box on hover/drag */}
+              <div className="absolute -top-14 left-1/2 -translate-x-1/2 bg-slate-950/90 border border-slate-800 text-emerald-400 font-mono px-1.5 py-0.5 rounded text-[9px] pointer-events-none z-55 whitespace-nowrap shadow-lg">
+                R: {Math.round(jointTransform.rotateZ)}° / S: {jointTransform.scale.toFixed(2)}x
+              </div>
+
+              {/* Center rotation line extension */}
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-[1px] h-4 bg-emerald-400/80 pointer-events-none z-50" />
+
+              {/* Rotator Handle dial at top */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'joint', 'rotate')}
+                className="w-3.5 h-3.5 bg-emerald-400 border-2 border-white rounded-full absolute -top-7.5 left-1/2 -translate-x-1/2 cursor-alias z-55 pointer-events-auto shadow-md hover:bg-white active:scale-125 transition-all flex items-center justify-center"
+                title="Drag to rotate"
+              >
+                <div className="w-1.5 h-1.5 bg-slate-950 rounded-full" />
+              </div>
+
+              {/* Corner Scale Coordinates Handle (Top Left) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'joint', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -top-3.5 -left-3.5 cursor-nwse-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+              {/* Corner Scale Coordinates Handle (Top Right) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'joint', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -top-3.5 -right-3.5 cursor-nesw-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+              {/* Corner Scale Coordinates Handle (Bottom Left) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'joint', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -bottom-3.5 -left-3.5 cursor-nesw-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+              {/* Corner Scale Coordinates Handle (Bottom Right) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'joint', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -bottom-3.5 -right-3.5 cursor-nwse-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -354,6 +580,7 @@ export default function EditableCanvas({
       {imageSrc && textConfig.content && (
         <div
           onPointerDown={(e) => handlePointerDown(e, 'text')}
+          onClick={(e) => e.stopPropagation()}
           onWheel={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -380,15 +607,15 @@ export default function EditableCanvas({
             opacity: textTransform.opacity ?? 1,
           }}
           id="hashtag-overlay"
-          title="Drag to move. Scroll wheel to rotate."
+          title="Drag to move. Drag corners to scale. Drag top node to rotate."
         >
           <span
             className={`block whitespace-nowrap font-bold select-none ${currentTextClass}`}
             style={{
               fontSize: `${0.095 * (parentSize.width || 400) * textTransform.scale}px`,
               lineHeight: 1.1,
-              textShadow: textConfig.glowColor
-                ? `0px 0px ${8 * textTransform.scale}px ${textConfig.glowColor}, 0 ${2 * textTransform.scale}px ${4 * textTransform.scale}px rgba(0,0,0,1)`
+              textShadow: (textConfig.colorPreset !== 'brutalist' && !['chrome', 'solar-flare', 'hyper-cyber', 'vaporwave'].includes(textConfig.colorPreset))
+                ? (textConfig.glowColor ? `0px 0px ${8 * textTransform.scale}px ${textConfig.glowColor}, 0 ${2 * textTransform.scale}px ${4 * textTransform.scale}px rgba(0,0,0,1)` : 'none')
                 : 'none',
               // Handle brutalist outline styling separately if requested
               WebkitTextStroke: textConfig.colorPreset === 'brutalist' ? `${2 * textTransform.scale}px #000000` : 'none',
@@ -396,6 +623,56 @@ export default function EditableCanvas({
           >
             {textConfig.content}
           </span>
+
+          {/* Interactive Bounding Box & Transform Handles (Photoshop style) */}
+          {selectedElement === 'text' && (
+            <>
+              {/* Bounding box outline */}
+              <div className="absolute -inset-2 border border-dashed border-emerald-400 pointer-events-none rounded z-50" />
+
+              {/* Angle indicator box on hover/drag */}
+              <div className="absolute -top-14 left-1/2 -translate-x-1/2 bg-slate-950/90 border border-slate-800 text-emerald-400 font-mono px-1.5 py-0.5 rounded text-[9px] pointer-events-none z-55 whitespace-nowrap shadow-lg">
+                R: {Math.round(textTransform.rotateZ)}° / S: {textTransform.scale.toFixed(2)}x
+              </div>
+
+              {/* Center rotation line extension */}
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-[1px] h-4 bg-emerald-400/80 pointer-events-none z-50" />
+
+              {/* Rotator Handle dial at top */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'text', 'rotate')}
+                className="w-3.5 h-3.5 bg-emerald-400 border-2 border-white rounded-full absolute -top-7.5 left-1/2 -translate-x-1/2 cursor-alias z-55 pointer-events-auto shadow-md hover:bg-white active:scale-125 transition-all flex items-center justify-center"
+                title="Drag to rotate"
+              >
+                <div className="w-1.5 h-1.5 bg-slate-950 rounded-full" />
+              </div>
+
+              {/* Corner Scale Coordinates Handle (Top Left) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'text', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -top-3.5 -left-3.5 cursor-nwse-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+              {/* Corner Scale Coordinates Handle (Top Right) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'text', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -top-3.5 -right-3.5 cursor-nesw-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+              {/* Corner Scale Coordinates Handle (Bottom Left) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'text', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -bottom-3.5 -left-3.5 cursor-nesw-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+              {/* Corner Scale Coordinates Handle (Bottom Right) */}
+              <div
+                onPointerDown={(e) => handleStartTransform(e, 'text', 'scale')}
+                className="w-3 h-3 bg-white border border-emerald-500 rounded-full absolute -bottom-3.5 -right-3.5 cursor-nwse-resize z-55 pointer-events-auto shadow hover:bg-emerald-100 active:scale-125 transition-transform"
+                title="Drag to resize"
+              />
+            </>
+          )}
         </div>
       )}
 

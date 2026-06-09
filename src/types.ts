@@ -8,7 +8,7 @@ export interface ElementTransform {
   opacity?: number;
 }
 
-export type SelectedElementType = 'sunglasses' | 'joint' | 'text' | null;
+export type SelectedElementType = 'background' | 'sunglasses' | 'joint' | 'text' | null;
 
 export interface SmokeConfig {
   color: string;
@@ -60,5 +60,8 @@ export interface AppStateSnapshot {
   imageSrc: string;
   sunglassesErasePaths: ErasePath[];
   jointErasePaths: ErasePath[];
+  imageTransform?: ElementTransform;
+  sunglassesStyle?: 'classic' | 'aviator' | 'goggles';
+  jointStyle?: 'classic' | 'cigar' | 'cone' | 'photo';
 }
 

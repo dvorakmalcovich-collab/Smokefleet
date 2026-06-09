@@ -1,12 +1,15 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { ErasePath, ErasePoint } from '../types';
 import { Highlighter, Undo2, Ban } from 'lucide-react';
+import { getSunglassesSVGMarkup, getJointSVGMarkup } from '../utils/svgMarkup';
 
 interface EraserCanvasProps {
   elementType: 'sunglasses' | 'joint';
   erasePaths: ErasePath[];
   onChangeErasePaths: (paths: ErasePath[]) => void;
   brushSize: number;
+  sunglassesStyle: 'classic' | 'aviator' | 'goggles';
+  jointStyle: 'classic' | 'cigar' | 'cone' | 'photo';
 }
 
 export default function EraserCanvas({
@@ -14,6 +17,8 @@ export default function EraserCanvas({
   erasePaths,
   onChangeErasePaths,
   brushSize,
+  sunglassesStyle,
+  jointStyle,
 }: EraserCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -56,31 +61,13 @@ export default function EraserCanvas({
     // Reconstruct SVG inline markup
     let svgMarkup = '';
     if (elementType === 'sunglasses') {
-      svgMarkup = `<svg viewBox="0 0 100 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M4 4h92v4H4V4z" fill="#000000" />
-        <path d="M8 8h32v4H8V8zm4 4h24v4H12V12zm4 4h16v4H16V16z" fill="#000000" />
-        <path d="M60 8h32v4H60V8zm4 4h24v4H64V12zm4 4h16v4H68V16z" fill="#000000" />
-        <path d="M12 8h4v4h-4V8z" fill="#ffffff" />
-        <path d="M16 12h4v4h-4v-4z" fill="#ffffff" />
-        <path d="M20 16h4v4h-4v-4z" fill="#ffffff" />
-        <path d="M64 8h4v4h-4V8z" fill="#ffffff" />
-        <path d="M68 12h4v4h-4v-4z" fill="#ffffff" />
-        <path d="M72 16h4v4h-4v-4z" fill="#ffffff" />
-      </svg>`;
+      svgMarkup = getSunglassesSVGMarkup(sunglassesStyle);
     } else {
-      svgMarkup = `<svg viewBox="0 0 140 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M 5 13.5 L 115 6 L 115 24 L 5 16.5 C 3.5 16.5 3.5 13.5 5 13.5 Z" fill="#edf2f7" stroke="#2d3748" stroke-width="1" />
-        <path d="M 30 11.8 Q 33 15 30 18.2" stroke="#cbd5e1" stroke-width="0.7" opacity="0.6" />
-        <path d="M 55 10.1 Q 58 15 55 19.9" stroke="#cbd5e1" stroke-width="0.7" opacity="0.6" />
-        <path d="M 80 8.4 Q 83 15 80 21.6" stroke="#cbd5e1" stroke-width="0.7" opacity="0.6" />
-        <path d="M 105 6.7 Q 108 15 105 23.3" stroke="#cbd5e1" stroke-width="0.7" opacity="0.6" />
-        <path d="M 115 6 L 122 8.5 L 123 15 L 122 21.5 L 115 24 L 117 15 Z" fill="#ef4444" />
-        <path d="M 122 8.5 L 128 10.5 L 130 15 L 128 19.5 L 122 21.5 L 120 15 Z" fill="#718096" />
-      </svg>`;
+      svgMarkup = getJointSVGMarkup(jointStyle);
     }
 
     const img = new Image();
-    img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgMarkup);
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgMarkup)));
     img.onload = () => {
       oCtx.drawImage(img, 0, 0, offscreen.width, offscreen.height);
 
@@ -106,7 +93,7 @@ export default function EraserCanvas({
       // Finally, paint masked offscreen buffer to active visible canvas
       ctx.drawImage(offscreen, 0, 0, canvas.width, canvas.height);
     };
-  }, [elementType, erasePaths, viewBoxW, viewBoxH]);
+  }, [elementType, erasePaths, viewBoxW, viewBoxH, sunglassesStyle, jointStyle]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
