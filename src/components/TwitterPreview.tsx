@@ -15,7 +15,6 @@ export default function TwitterPreview({ imageSrc }: TwitterPreviewProps) {
           <div className="w-3 h-3 rounded-full bg-yellow-500" />
           <div className="w-3 h-3 rounded-full bg-green-500" />
         </div>
-        <span className="text-xs font-mono text-slate-400 font-medium">X Profile Live Simulator</span>
         <div className="w-8" /> {/* Spacer */}
       </div>
 
@@ -70,8 +69,8 @@ export default function TwitterPreview({ imageSrc }: TwitterPreviewProps) {
           <p className="text-sm font-sans text-slate-400">@smokefleet_anon</p>
 
           {/* User Bio */}
-          <p className="mt-3 text-sm font-sans text-slate-205 leading-relaxed">
-            Floating through the cosmos. If your digital avatar isn't compiling uncropped smoke trails and vector overlays inside the local browser context, your <span className="text-emerald-400 font-medium">#smokefleet</span> pilot cred is absolute zero. Stop larpping on <a href="https://smokefleet.org" target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline hover:text-emerald-305 transition-colors">smokefleet.org</a> and gear up. 🛸💨
+          <p className="mt-3 text-sm font-sans text-slate-200 leading-relaxed">
+            High octane, premium smokes, and calling out the political shitshow. Zero tolerance for alternative facts or MAGA spin. 🏎️💨 <span className="text-emerald-400 font-medium">#smokefleet</span>
           </p>
 
           {/* Metadata */}

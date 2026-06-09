@@ -23,6 +23,31 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ElementTransform, SelectedElementType, SmokeConfig, TextConfig, AppStateSnapshot, ErasePath } from './types';
+
+const hexToRgba = (colorStr: string, alpha: number): string => {
+  if (!colorStr) return 'transparent';
+  if (colorStr.startsWith('rgba')) {
+    return colorStr.replace(/[\d\.]+\)$/, `${alpha})`);
+  }
+  if (colorStr.startsWith('rgb')) {
+    return colorStr.replace('rgb', 'rgba').replace(/\)$/, `, ${alpha})`);
+  }
+  if (colorStr.startsWith('#')) {
+    const hex = colorStr.trim();
+    if (hex.length === 4) {
+      const r = parseInt(hex[1] + hex[1], 16);
+      const g = parseInt(hex[2] + hex[2], 16);
+      const b = parseInt(hex[3] + hex[3], 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    } else if (hex.length === 7) {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+  }
+  return colorStr;
+};
 import EditableCanvas from './components/EditableCanvas';
 import TwitterPreview from './components/TwitterPreview';
 import EraserCanvas from './components/EraserCanvas';
@@ -75,26 +100,34 @@ const drawSmokeTrail = (
   const vy = -Math.cos(devRad) * 1.2 - 2.5;
 
   ctx.save();
-  ctx.globalCompositeOperation = 'screen';
+  if (smokeConfig.type === 'black') {
+    ctx.globalCompositeOperation = 'source-over';
+  } else {
+    ctx.globalCompositeOperation = 'screen';
+  }
 
   const puffCount = 12 + smokeConfig.intensity * 8;
   const scaleFactor = canvasSize / 400;
 
   for (let i = 0; i < puffCount; i++) {
     const t = i / puffCount;
-    const wiggle = Math.sin(i * 1.5) * (18 * scaleFactor) * (t + 0.1);
+    // Increase wiggle amplitude (18 -> 28) and spread it out more as it drifts (t + 0.15) for wider dispersion
+    const wiggle = Math.sin(i * 1.5) * (28 * scaleFactor) * (t + 0.15);
     const px = startX + vx * (i * (8 * scaleFactor)) + wiggle;
     const py = startY + vy * (i * (8 * scaleFactor));
 
-    const size = (14 + t * 44) * scaleFactor * (0.8 + smokeConfig.intensity * 0.4);
-    const alpha = Math.max(0, 0.45 * (1 - t) * (smokeConfig.intensity / 5));
+    // Puffs grow larger and drift wider
+    const size = (16 + t * 54) * scaleFactor * (0.8 + smokeConfig.intensity * 0.4);
+    // Lower base opacity (0.95 -> 0.65) to prevent dense stacking
+    const alpha = Math.max(0, 0.65 * (1 - t) * (smokeConfig.intensity / 5));
 
     if (alpha <= 0.01) continue;
 
     const grad = ctx.createRadialGradient(px, py, size * 0.05, px, py, size);
-    grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha * 0.95})`);
-    grad.addColorStop(0.3, `rgba(${r}, ${g}, ${b}, ${alpha * 0.4})`);
-    grad.addColorStop(0.7, `rgba(${r}, ${g}, ${b}, ${alpha * 0.08})`);
+    // Faster radial fade stops for soft cloud rendering instead of solid circles
+    grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha * 0.7})`);
+    grad.addColorStop(0.25, `rgba(${r}, ${g}, ${b}, ${alpha * 0.35})`);
+    grad.addColorStop(0.6, `rgba(${r}, ${g}, ${b}, ${alpha * 0.1})`);
     grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
 
     ctx.fillStyle = grad;
@@ -245,7 +278,7 @@ const drawPerspectiveVector = async (
   ctx.restore();
 };
 
-const getSunglassesSVGMarkup = (variant: 'classic' | 'aviator' | 'goggles') => {
+const getSunglassesSVGMarkup = (variant: 'classic' | 'aviator' | 'goggles' | 'visor' | 'stacked') => {
   return getSunglassesSVGMarkupShared(variant);
 };
 
@@ -257,8 +290,8 @@ export default function App() {
   const [imageSrc, setImageSrc] = useState<string>('');
   
   // Custom design style selections
-  const [sunglassesStyle, setSunglassesStyle] = useState<'classic' | 'aviator' | 'goggles'>('classic');
-  const [jointStyle, setJointStyle] = useState<'classic' | 'cigar' | 'cone' | 'photo'>('classic');
+  const [sunglassesStyle, setSunglassesStyle] = useState<'classic' | 'aviator' | 'goggles' | 'visor' | 'stacked'>('aviator');
+  const [jointStyle, setJointStyle] = useState<'classic' | 'cigar' | 'cone' | 'photo'>('photo');
 
   // Back Photo Zoom / Path placement values
   const [imageTransform, setImageTransform] = useState<ElementTransform>({
@@ -281,8 +314,8 @@ export default function App() {
   const [jointErasePaths, setJointErasePaths] = useState<ErasePath[]>([]);
   const [eraserBrushSize, setEraserBrushSize] = useState<number>(6);
 
-  // Active Element Focus (Default to background so panning is immediately active on upload)
-  const [selectedElement, setSelectedElement] = useState<SelectedElementType>('background');
+  // Active Element Focus (Default to sunglasses)
+  const [selectedElement, setSelectedElement] = useState<SelectedElementType>('sunglasses');
 
   // Text Config
   const [textConfig, setTextConfig] = useState<TextConfig>({
@@ -291,7 +324,9 @@ export default function App() {
     colorPreset: 'hyper-cyber',
     fontSizeValue: 36,
     letterSpacing: 2,
-    glowColor: '#22d3ee'
+    glowColor: '#22d3ee',
+    dropShadow: true,
+    shadowOpacity: 0.3
   });
 
   // Smoke config
@@ -302,7 +337,8 @@ export default function App() {
   });
 
   // Toggles and indicators
-  const [showTwitterMask, setShowTwitterMask] = useState<boolean>(false);
+  const [showTwitterMask, setShowTwitterMask] = useState<boolean>(true);
+  const [activeStep, setActiveStep] = useState<'photo' | 'customize' | 'download'>('photo');
   const [isMirrored, setIsMirrored] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportedImage, setExportedImage] = useState<string>('');
@@ -619,6 +655,7 @@ export default function App() {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
+        const shadowOpacity = textConfig.shadowOpacity ?? 0.3;
         let gradientFill: string | CanvasGradient = '#ffffff';
         if (textConfig.colorPreset === 'chrome') {
           const grad = ctx.createLinearGradient(0, -20, 0, 20);
@@ -626,56 +663,122 @@ export default function App() {
           grad.addColorStop(0.5, '#ffffff');
           grad.addColorStop(1, '#818cf8');
           gradientFill = grad;
-          ctx.shadowColor = 'rgba(139,92,246,0.85)';
-          ctx.shadowBlur = 18;
         } else if (textConfig.colorPreset === 'solar-flare') {
           const grad = ctx.createLinearGradient(-150, 0, 150, 0);
           grad.addColorStop(0, '#ef4444');
           grad.addColorStop(0.5, '#f97316');
           grad.addColorStop(1, '#facc15');
           gradientFill = grad;
-          ctx.shadowColor = 'rgba(239,68,68,0.8)';
-          ctx.shadowBlur = 18;
         } else if (textConfig.colorPreset === 'hyper-cyber') {
           const grad = ctx.createLinearGradient(-120, 0, 120, 0);
           grad.addColorStop(0, '#4ade80');
           grad.addColorStop(1, '#06b6d4');
           gradientFill = grad;
-          ctx.shadowColor = 'rgba(34,197,94,0.7)';
-          ctx.shadowBlur = 12;
         } else if (textConfig.colorPreset === 'vaporwave') {
           const grad = ctx.createLinearGradient(-120, 0, 120, 0);
           grad.addColorStop(0, '#f472b6');
           grad.addColorStop(0.5, '#c084fc');
           grad.addColorStop(1, '#22d3ee');
           gradientFill = grad;
-          ctx.shadowColor = 'rgba(219,39,119,0.75)';
-          ctx.shadowBlur = 15;
+        } else if (textConfig.colorPreset === 'maga-tears') {
+          const grad = ctx.createLinearGradient(-120, 0, 120, 0);
+          grad.addColorStop(0, '#22d3ee'); // cyan-400
+          grad.addColorStop(0.5, '#5eead4'); // teal-300
+          grad.addColorStop(1, '#3b82f6'); // blue-500
+          gradientFill = grad;
         } else if (textConfig.colorPreset === 'brutalist') {
           gradientFill = '#ffffff';
         }
 
-        if (textConfig.glowColor && textConfig.colorPreset !== 'brutalist' && !['chrome', 'solar-flare', 'hyper-cyber', 'vaporwave'].includes(textConfig.colorPreset)) {
-          ctx.shadowColor = textConfig.glowColor;
-          ctx.shadowBlur = 16;
-        } else if (textConfig.colorPreset === 'brutalist') {
-          ctx.shadowColor = 'transparent';
-          ctx.shadowBlur = 0;
+        // Determine glow parameters
+        let glowColor = '';
+        let glowBlur = 0;
+
+        if (textConfig.colorPreset === 'chrome') {
+          glowColor = 'rgba(139, 92, 246, 0.85)';
+          glowBlur = 6;
+        } else if (textConfig.colorPreset === 'solar-flare') {
+          glowColor = 'rgba(239, 68, 68, 0.85)';
+          glowBlur = 5;
+        } else if (textConfig.colorPreset === 'hyper-cyber') {
+          glowColor = 'rgba(34, 197, 94, 0.85)';
+          glowBlur = 4;
+        } else if (textConfig.colorPreset === 'vaporwave') {
+          glowColor = 'rgba(219, 39, 119, 0.85)';
+          glowBlur = 5;
+        } else if (textConfig.colorPreset === 'maga-tears') {
+          glowColor = 'rgba(6, 182, 212, 0.85)';
+          glowBlur = 5;
+        } else if (textConfig.glowColor && textConfig.colorPreset !== 'brutalist') {
+          glowColor = hexToRgba(textConfig.glowColor, 0.85);
+          glowBlur = 6;
+        }
+
+        // Clear native shadows for manual layered shadow rendering
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+
+        // Render shadows & glow if not brutalist
+        if (textConfig.colorPreset !== 'brutalist') {
+          // 1. Draw deepest layer: Black drop shadow (if enabled)
+          if (textConfig.dropShadow !== false) {
+            ctx.save();
+            ctx.shadowColor = `rgba(0, 0, 0, ${shadowOpacity})`;
+            ctx.shadowBlur = 1.5 * finalScale;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 2 * finalScale;
+            ctx.fillStyle = `rgba(0, 0, 0, ${shadowOpacity})`;
+            ctx.fillText(textConfig.content, 0, 0);
+            ctx.restore();
+          }
+
+          // 2. Draw middle layer: Glow shadow (if glowColor is defined)
+          if (glowColor && glowBlur > 0) {
+            ctx.save();
+            ctx.shadowColor = glowColor;
+            ctx.shadowBlur = glowBlur * finalScale;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+            ctx.fillStyle = glowColor;
+            ctx.fillText(textConfig.content, 0, 0);
+            ctx.restore();
+          }
+        }
+
+        // Brutalist layout box & outline rendering
+        if (textConfig.colorPreset === 'brutalist') {
+          const textWidth = ctx.measureText(textConfig.content).width;
+          const paddingX = 0.8 * 38; // 0.8em matching HTML
+          const paddingY = 0.25 * 38; // 0.25em matching HTML
+          const boxWidth = textWidth + paddingX * 2;
+          const boxHeight = 38 + paddingY * 2;
+          const x = -boxWidth / 2;
+          const y = -boxHeight / 2;
+
+          // 1. Draw flat shadow if dropShadow is active
+          if (textConfig.dropShadow !== false) {
+            ctx.fillStyle = `rgba(0, 0, 0, ${shadowOpacity})`;
+            ctx.fillRect(x + 0.1 * 38, y + 0.1 * 38, boxWidth, boxHeight);
+          }
+
+          // 2. Draw background box
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+          ctx.fillRect(x, y, boxWidth, boxHeight);
+
+          // 3. Draw border box
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 0.1 * 38; // 0.1em matching HTML
+          ctx.strokeRect(x, y, boxWidth, boxHeight);
+
+          // 4. Draw text outline (WebkitTextStroke: 2px -> lineWidth = 4)
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = '#000000';
+          ctx.strokeText(textConfig.content, 0, 0);
         }
 
         ctx.fillStyle = gradientFill;
-
-        if (textConfig.colorPreset === 'brutalist') {
-          ctx.lineWidth = 10;
-          ctx.strokeStyle = '#000000';
-          ctx.strokeText(textConfig.content, 0, 0);
-          ctx.shadowColor = 'transparent';
-          ctx.shadowBlur = 0;
-        } else {
-          ctx.lineWidth = 4;
-          ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-          ctx.strokeText(textConfig.content, 0, 0);
-        }
 
         ctx.fillText(textConfig.content, 0, 0);
         ctx.restore();
@@ -783,6 +886,7 @@ export default function App() {
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
 
+          const shadowOpacity = textConfig.shadowOpacity ?? 0.3;
           let gradientFill: string | CanvasGradient = '#ffffff';
           if (textConfig.colorPreset === 'chrome') {
             const grad = ctx.createLinearGradient(0, -20, 0, 20);
@@ -790,48 +894,116 @@ export default function App() {
             grad.addColorStop(0.5, '#ffffff');
             grad.addColorStop(1, '#818cf8');
             gradientFill = grad;
-            ctx.shadowColor = 'rgba(139,92,246,0.85)';
-            ctx.shadowBlur = 18;
           } else if (textConfig.colorPreset === 'solar-flare') {
             const grad = ctx.createLinearGradient(-150, 0, 150, 0);
             grad.addColorStop(0, '#ef4444');
             grad.addColorStop(0.5, '#f97316');
             grad.addColorStop(1, '#facc15');
             gradientFill = grad;
-            ctx.shadowColor = 'rgba(239,68,68,0.8)';
-            ctx.shadowBlur = 18;
           } else if (textConfig.colorPreset === 'hyper-cyber') {
             const grad = ctx.createLinearGradient(-120, 0, 120, 0);
             grad.addColorStop(0, '#4ade80');
             grad.addColorStop(1, '#06b6d4');
             gradientFill = grad;
-            ctx.shadowColor = 'rgba(34,197,94,0.7)';
-            ctx.shadowBlur = 12;
           } else if (textConfig.colorPreset === 'vaporwave') {
             const grad = ctx.createLinearGradient(-120, 0, 120, 0);
             grad.addColorStop(0, '#f472b6');
             grad.addColorStop(0.5, '#c084fc');
             grad.addColorStop(1, '#22d3ee');
             gradientFill = grad;
-            ctx.shadowColor = 'rgba(219,39,119,0.75)';
-            ctx.shadowBlur = 15;
+          } else if (textConfig.colorPreset === 'maga-tears') {
+            const grad = ctx.createLinearGradient(-120, 0, 120, 0);
+            grad.addColorStop(0, '#22d3ee');
+            grad.addColorStop(0.5, '#5eead4');
+            grad.addColorStop(1, '#3b82f6');
+            gradientFill = grad;
           }
 
-          if (textConfig.glowColor && textConfig.colorPreset !== 'brutalist' && !['chrome', 'solar-flare', 'hyper-cyber', 'vaporwave'].includes(textConfig.colorPreset)) {
-            ctx.shadowColor = textConfig.glowColor;
-            ctx.shadowBlur = 15;
-          } else if (textConfig.colorPreset === 'brutalist') {
-            ctx.shadowColor = 'transparent';
-            ctx.shadowBlur = 0;
+          // Determine glow parameters
+          let glowColor = '';
+          let glowBlur = 0;
+
+          if (textConfig.colorPreset === 'chrome') {
+            glowColor = 'rgba(139, 92, 246, 0.85)';
+            glowBlur = 6;
+          } else if (textConfig.colorPreset === 'solar-flare') {
+            glowColor = 'rgba(239, 68, 68, 0.85)';
+            glowBlur = 5;
+          } else if (textConfig.colorPreset === 'hyper-cyber') {
+            glowColor = 'rgba(34, 197, 94, 0.85)';
+            glowBlur = 4;
+          } else if (textConfig.colorPreset === 'vaporwave') {
+            glowColor = 'rgba(219, 39, 119, 0.85)';
+            glowBlur = 5;
+          } else if (textConfig.colorPreset === 'maga-tears') {
+            glowColor = 'rgba(6, 182, 212, 0.85)';
+            glowBlur = 5;
+          } else if (textConfig.glowColor && textConfig.colorPreset !== 'brutalist') {
+            glowColor = hexToRgba(textConfig.glowColor, 0.85);
+            glowBlur = 6;
           }
 
+          // Clear native shadows for manual layered shadow rendering
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+
+          // Render shadows & glow if not brutalist
+          if (textConfig.colorPreset !== 'brutalist') {
+            // 1. Draw deepest layer: Black drop shadow (if enabled)
+            if (textConfig.dropShadow !== false) {
+              ctx.save();
+              ctx.shadowColor = `rgba(0, 0, 0, ${shadowOpacity})`;
+              ctx.shadowBlur = 1.5 * textTransform.scale;
+              ctx.shadowOffsetX = 0;
+              ctx.shadowOffsetY = 2 * textTransform.scale;
+              ctx.fillStyle = `rgba(0, 0, 0, ${shadowOpacity})`;
+              ctx.fillText(textConfig.content, 0, 0);
+              ctx.restore();
+            }
+
+            // 2. Draw middle layer: Glow shadow (if glowColor is defined)
+            if (glowColor && glowBlur > 0) {
+              ctx.save();
+              ctx.shadowColor = glowColor;
+              ctx.shadowBlur = glowBlur * textTransform.scale;
+              ctx.shadowOffsetX = 0;
+              ctx.shadowOffsetY = 0;
+              ctx.fillStyle = glowColor;
+              ctx.fillText(textConfig.content, 0, 0);
+              ctx.restore();
+            }
+          }
+
+          // Brutalist layout box & outline rendering
           if (textConfig.colorPreset === 'brutalist') {
-            ctx.lineWidth = 6;
+            const textWidth = ctx.measureText(textConfig.content).width;
+            const paddingX = 0.8 * 38; // 0.8em matching HTML
+            const paddingY = 0.25 * 38; // 0.25em matching HTML
+            const boxWidth = textWidth + paddingX * 2;
+            const boxHeight = 38 + paddingY * 2;
+            const x = -boxWidth / 2;
+            const y = -boxHeight / 2;
+
+            // 1. Draw flat shadow if dropShadow is active
+            if (textConfig.dropShadow !== false) {
+              ctx.fillStyle = `rgba(0, 0, 0, ${shadowOpacity})`;
+              ctx.fillRect(x + 0.1 * 38, y + 0.1 * 38, boxWidth, boxHeight);
+            }
+
+            // 2. Draw background box
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.fillRect(x, y, boxWidth, boxHeight);
+
+            // 3. Draw border box
             ctx.strokeStyle = '#000000';
-            ctx.strokeText(textConfig.content, 0, 0);
-          } else {
+            ctx.lineWidth = 0.1 * 38; // 0.1em matching HTML
+            ctx.strokeRect(x, y, boxWidth, boxHeight);
+
+            // 4. Draw text outline (WebkitTextStroke: 2px -> lineWidth = 4)
             ctx.lineWidth = 4;
-            ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+            ctx.strokeStyle = '#000000';
             ctx.strokeText(textConfig.content, 0, 0);
           }
 
@@ -881,17 +1053,7 @@ export default function App() {
           {/* Logo & Headline */}
           <div className="flex items-center gap-2.5">
             <div className="bg-gradient-to-tr from-emerald-500 to-cyan-500 p-2 rounded-xl shadow-glow shadow-emerald-500/20">
-              <span className="font-mono font-black text-slate-950 tracking-tighter text-sm">SF</span>
-            </div>
-            <div>
-              <div className="flex flex-col leading-none">
-                <h1 className="font-sans font-black text-white text-base tracking-tight uppercase">
-                  #SMOKEFLEET AVATAR MAKER
-                </h1>
-                <p className="text-[10px] text-slate-400 font-mono mt-0.5 font-medium leading-none">
-                  create your own smokefleet avatar, 100% AI-free
-                </p>
-              </div>
+              <span className="font-mono font-black text-slate-955 tracking-tighter text-sm">#SF</span>
             </div>
           </div>
 
@@ -913,7 +1075,7 @@ export default function App() {
               className={`font-sans font-black text-xs py-1.5 px-3.5 h-8.5 rounded-xl flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all select-none
                 ${(!imageSrc || isExporting)
                   ? 'bg-slate-900 border border-slate-850/60 text-slate-600 cursor-not-allowed opacity-60' 
-                  : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-slate-100 hover:to-slate-100 text-slate-950 shadow-lg shadow-emerald-500/10 cursor-pointer'
+                  : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-slate-100 hover:to-slate-105 text-slate-955 shadow-lg shadow-emerald-500/10 cursor-pointer'
                 }`}
               title={!imageSrc ? "Please upload a profile photo first" : "Render and download composite image"}
             >
@@ -935,38 +1097,18 @@ export default function App() {
 
       {/* Main Studio Arena */}
       <main className="max-w-7xl mx-auto px-4 py-6 md:py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 flex-grow w-full">
+        <div className="lg:col-span-12 flex flex-col gap-2 border-b border-slate-900 pb-4 mb-2">
+          <h2 className="font-sans font-black text-2xl md:text-3xl text-white tracking-tight">
+            #smokefleet avatar creator
+          </h2>
+          <p className="text-xs md:text-sm text-slate-400 font-mono leading-relaxed">
+            Create your own smokefleet avatar, 100% AI free and 100% anonymous, nothing is sent to a server, everything stays in your browser.
+          </p>
+        </div>
         
         {/* LEFT COLUMN: STICKY HERO VIEWPORT */}
         <div className="lg:col-span-6 lg:sticky lg:top-[88px] z-20 h-fit flex flex-col gap-5">
           
-          {/* COMPACT LOAD PICTURE PILL - STEP 1 (ONE LINE FOR MAXIMUM FOLD RETENTION) */}
-          <section className="bg-slate-950 border border-indigo-950/40 rounded-2xl p-2.5 px-4.5 flex items-center justify-between gap-3 relative overflow-hidden shadow-[0_0_15px_rgba(99,102,241,0.03)]">
-            <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-indigo-500/5 to-transparent rounded-full pointer-events-none" />
-            <div className="flex items-center gap-2.5 min-w-0 flex-grow">
-              <div className="bg-indigo-500/10 p-2 rounded-xl text-indigo-400 shrink-0">
-                <UploadCloud className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-slate-200 flex items-center gap-1.5 leading-tight">
-                  <span>Upload Profile Photo</span>
-                  <span className="bg-indigo-500/10 text-indigo-400 text-[8px] font-mono border border-indigo-500/20 px-1 rounded uppercase tracking-wider font-semibold">
-                    Step 1
-                  </span>
-                </p>
-                <p className="text-[10px] text-slate-500 truncate mt-0.5">Drag &amp; drop supported</p>
-              </div>
-            </div>
-            <label className="bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-sans font-black text-[11px] px-3.5 py-1.5 rounded-lg transition-all cursor-pointer select-none shrink-0 uppercase tracking-wider">
-              Choose File
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoUpload}
-                className="hidden"
-              />
-            </label>
-          </section>
-
           <div className="bg-slate-950 border border-slate-900 rounded-3xl p-4 md:p-5 shadow-2xl relative">
             
             {/* Viewport Action Badges */}
@@ -974,7 +1116,7 @@ export default function App() {
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 <span className="text-xs font-mono text-slate-300 font-semibold uppercase tracking-wider">
-                  Interactive Canvas
+                  Avatar Preview
                 </span>
               </div>
 
@@ -1042,41 +1184,9 @@ export default function App() {
               isMirrored={isMirrored}
               sunglassesStyle={sunglassesStyle}
               jointStyle={jointStyle}
+              activeStep={activeStep}
             />
 
-            {/* Viewport controls under study */}
-            <div className="mt-4 flex flex-wrap gap-2.5 items-center justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => setShowTwitterMask(!showTwitterMask)}
-                  className={`px-3 py-1.5 rounded-full border text-xs font-mono font-medium transition-all flex items-center gap-1.5 ${
-                    showTwitterMask
-                       ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]'
-                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-300'
-                  }`}
-                >
-                  <div className={`w-2 h-2 rounded-full ${showTwitterMask ? 'bg-emerald-400' : 'bg-slate-600'}`} />
-                  X Crop Overlay
-                </button>
-
-                <button
-                  onClick={() => setIsMirrored(!isMirrored)}
-                  className={`px-3 py-1.5 rounded-full border text-xs font-mono font-medium transition-all flex items-center gap-1.5 ${
-                    isMirrored
-                       ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-300 shadow-[0_0_8px_rgba(139,92,246,0.15)]'
-                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-305'
-                  }`}
-                  title="Horizontally flip the background image"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  Flip Image
-                </button>
-              </div>
-
-              <span className="text-[10px] font-mono text-slate-500">
-                👉 Click layers directly or drag them inside canvas box
-              </span>
-            </div>
           </div>
 
         </div>
@@ -1084,52 +1194,134 @@ export default function App() {
         {/* RIGHT COLUMN: WORKSPACE TOOL SUITE & COMPACT DECK */}
         <div className="lg:col-span-6 flex flex-col gap-6" id="smokefleet-editor-suite">
 
-          {/* DYNAMIC LAYER INSPECTOR POPUP PANEL */}
-          <div className="bg-slate-950 border border-slate-900 rounded-3xl p-5 shadow-xl flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b border-slate-900 pb-3">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-xs font-bold font-mono tracking-wider text-slate-300 uppercase">
-                  Layer Controls
-                </h3>
+          {/* 3-STEP FLOW NAVIGATION */}
+          <div className="grid grid-cols-6 gap-3 bg-slate-900/40 p-1.5 rounded-2xl border border-slate-900">
+            <button
+              type="button"
+              onClick={() => setActiveStep('photo')}
+              className={`col-span-2 py-3 px-2 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all text-center select-none cursor-pointer ${
+                activeStep === 'photo'
+                  ? 'bg-gradient-to-tr from-indigo-500/20 to-purple-500/20 border border-indigo-500/50 text-white font-bold shadow-lg shadow-indigo-500/10'
+                  : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+              }`}
+            >
+              <div className={`p-1.5 rounded-lg shrink-0 ${activeStep === 'photo' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-slate-950 text-slate-500'}`}>
+                <UploadCloud className="w-5 h-5" />
               </div>
-              <div className="bg-slate-900 px-3 py-1 rounded-full text-[10px] font-mono text-emerald-400 font-bold uppercase tracking-wider border border-slate-800">
-                {selectedElement === 'background' ? '🖼️ Back Photo' : selectedElement === 'sunglasses' ? '🕶️ Shades' : selectedElement === 'joint' ? '🚬 Joint' : '💬 Watermark'}
+              <div className="flex flex-col">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold leading-none">Step 1</span>
+                <span className="text-xs font-sans mt-0.5 font-bold uppercase leading-none">Photo</span>
               </div>
-            </div>
+            </button>
 
-            {/* Quick-switch layout tabs */}
-            <div className="grid grid-cols-4 bg-slate-900/60 p-1 rounded-xl border border-slate-900/80 gap-1">
-              {[
-                { key: 'background', label: '🖼️ Base Photo' },
-                { key: 'sunglasses', label: '🕶️ Shades' },
-                { key: 'joint', label: '🚬 Joint' },
-                { key: 'text', label: '💬 Watermark' },
-              ].map((layer) => (
-                <button
-                  key={layer.key}
-                  onClick={() => setSelectedElement(layer.key as SelectedElementType)}
-                  className={`py-2 px-1 rounded-lg text-[11px] font-sans font-bold transition-all ${
-                    selectedElement === layer.key
-                      ? 'bg-slate-800 text-white shadow-md'
-                      : 'text-slate-450 hover:text-slate-200 hover:bg-slate-900/50'
-                  }`}
-                >
-                  {layer.label}
-                </button>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveStep('customize');
+                if (selectedElement === 'background') {
+                  setSelectedElement('sunglasses');
+                }
+              }}
+              className={`col-span-2 py-3 px-2 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all text-center select-none cursor-pointer ${
+                activeStep === 'customize'
+                  ? 'bg-gradient-to-tr from-emerald-500/20 to-cyan-500/20 border border-emerald-500/50 text-white font-bold shadow-lg shadow-emerald-500/10'
+                  : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+              }`}
+            >
+              <div className={`p-1.5 rounded-lg shrink-0 ${activeStep === 'customize' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-950 text-slate-500'}`}>
+                <Layers className="w-5 h-5" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold leading-none">Step 2</span>
+                <span className="text-xs font-sans mt-0.5 font-bold uppercase leading-none">Customize</span>
+              </div>
+            </button>
 
-            {/* Transform sliders tailored exactly to the selected layer */}
-            <div className="space-y-4 pt-1">
-              
-              {selectedElement === 'background' ? (
-                // Background panning & zoom sliders
-                <div className="space-y-4">
+            <button
+              type="button"
+              onClick={() => setActiveStep('download')}
+              className={`col-span-2 py-3 px-2 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all text-center select-none cursor-pointer ${
+                activeStep === 'download'
+                  ? 'bg-gradient-to-tr from-purple-500/20 to-pink-500/20 border border-purple-500/50 text-white font-bold shadow-lg shadow-purple-500/10'
+                  : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+              }`}
+            >
+              <div className={`p-1.5 rounded-lg shrink-0 ${activeStep === 'download' ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-950 text-slate-500'}`}>
+                <Download className="w-5 h-5" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold leading-none">Step 3</span>
+                <span className="text-xs font-sans mt-0.5 font-bold uppercase leading-none">Download</span>
+              </div>
+            </button>
+          </div>
+
+          {/* STEP 1: PHOTO */}
+          {activeStep === 'photo' && (
+            <div className="flex flex-col gap-5">
+              {/* UPLOAD PROFILE PHOTO */}
+              <section className="bg-slate-955 border border-indigo-950/40 rounded-3xl p-5 flex flex-col gap-4 relative overflow-hidden shadow-[0_0_15px_rgba(99,102,241,0.03)]">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-indigo-500/5 to-transparent rounded-full pointer-events-none" />
+                <div className="flex items-center gap-3">
+                  <div className="bg-indigo-500/10 p-3 rounded-2xl text-indigo-400 shrink-0">
+                    <UploadCloud className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-205 uppercase tracking-wide">
+                      Upload Profile Photo
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-normal">
+                      Select or drag-and-drop a portrait photo.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border border-dashed border-slate-800/80 hover:border-indigo-500/40 rounded-2xl p-6 text-center transition-all bg-slate-900/20 flex flex-col items-center justify-center gap-3 relative">
+                  <span className="text-xs text-slate-400 font-medium">Drag &amp; drop your image here, or click below</span>
+                  <label className="bg-indigo-500 hover:bg-indigo-400 text-slate-955 font-sans font-black text-xs px-4 py-2 rounded-xl transition-all cursor-pointer select-none uppercase tracking-wider shadow-md">
+                    Choose File
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </section>
+
+              {/* PHOTO ADJUSTMENTS */}
+              <section className="bg-slate-955 border border-slate-900 rounded-3xl p-5 shadow-xl flex flex-col gap-4">
+                <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                  <div className="flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-indigo-400" />
+                    <h3 className="text-xs font-bold font-mono tracking-wider text-slate-305 uppercase">
+                      Photo Adjustments
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsMirrored(!isMirrored)}
+                    className={`px-3.5 py-2 rounded-xl border text-xs font-mono font-medium transition-all flex items-center gap-2 cursor-pointer ${
+                      isMirrored
+                         ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-300 shadow-[0_0_8px_rgba(139,92,246,0.15)]'
+                         : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-355'
+                    }`}
+                    title="Horizontally flip the background image"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Flip Image
+                  </button>
+                </div>
+
+                <div className="space-y-4 pt-1">
                   <div>
                     <div className="flex justify-between text-xs font-mono text-slate-400 mb-1">
                       <span>Zoom Level (Scale)</span>
-                      <span className="text-emerald-400">{imageTransform.scale.toFixed(2)}x</span>
+                      <span className="text-indigo-400">{imageTransform.scale.toFixed(2)}x</span>
                     </div>
                     <input
                       type="range"
@@ -1137,327 +1329,435 @@ export default function App() {
                       max="4.50"
                       step="0.05"
                       value={imageTransform.scale}
-                      onChange={(e) => updateActiveTransform('scale', parseFloat(e.target.value))}
-                      className="w-full accent-emerald-450 cursor-ew-resize py-1"
+                      onChange={(e) => {
+                        setImageTransform({ ...imageTransform, scale: parseFloat(e.target.value) });
+                        setSelectedElement('background');
+                      }}
+                      className="w-full accent-indigo-500 cursor-ew-resize py-1"
                     />
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <div className="flex justify-between text-xs font-mono text-slate-400 mb-1">
-                        <span>Move Horizontally (X)</span>
-                        <span className="text-emerald-400">{Math.round(imageTransform.x)}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="-50"
-                        max="150"
-                        step="1"
-                        value={imageTransform.x}
-                        onChange={(e) => updateActiveTransform('x', parseInt(e.target.value))}
-                        className="w-full accent-emerald-450 cursor-ew-resize py-1"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-xs font-mono text-slate-400 mb-1">
-                        <span>Move Vertically (Y)</span>
-                        <span className="text-emerald-400">{Math.round(imageTransform.y)}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="-50"
-                        max="150"
-                        step="1"
-                        value={imageTransform.y}
-                        onChange={(e) => updateActiveTransform('y', parseInt(e.target.value))}
-                        className="w-full accent-emerald-450 cursor-ew-resize py-1"
-                      />
-                    </div>
-                  </div>
                 </div>
-              ) : (
-                // Accessory controllers
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <div className="flex justify-between text-xs font-mono text-slate-400 mb-1">
-                        <span>Pitch (3D Vertical Tilt)</span>
-                        <span className="text-emerald-400">{getActiveTransform().rotateX}°</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => adjustX(-5)}
-                          className="w-7 h-7 rounded-lg bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-xs select-none"
-                        >-</button>
-                        <input
-                          type="range"
-                          min="-75"
-                          max="75"
-                          value={getActiveTransform().rotateX}
-                          onChange={(e) => updateActiveTransform('rotateX', parseInt(e.target.value))}
-                          className="w-full accent-emerald-400 cursor-ew-resize py-1"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => adjustX(5)}
-                          className="w-7 h-7 rounded-lg bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-xs select-none"
-                        >+</button>
-                      </div>
-                    </div>
+              </section>
+            </div>
+          )}
 
-                    <div>
-                      <div className="flex justify-between text-xs font-mono text-slate-400 mb-1">
-                        <span>Yaw (3D Left/Right Rotate)</span>
-                        <span className="text-emerald-400">{getActiveTransform().rotateY}°</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => adjustY(-5)}
-                          className="w-7 h-7 rounded-lg bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-xs select-none"
-                        >-</button>
-                        <input
-                          type="range"
-                          min="-75"
-                          max="75"
-                          value={getActiveTransform().rotateY}
-                          onChange={(e) => updateActiveTransform('rotateY', parseInt(e.target.value))}
-                          className="w-full accent-emerald-400 cursor-ew-resize py-1"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => adjustY(5)}
-                          className="w-7 h-7 rounded-lg bg-slate-850 hover:bg-slate-750 text-slate-300 font-bold transition-all shrink-0 active:scale-90 flex items-center justify-center border border-slate-800 text-xs select-none"
-                        >+</button>
-                      </div>
-                    </div>
-                  </div>
+          {/* STEP 2: CUSTOMIZE */}
+          {activeStep === 'customize' && (
+            <div className="flex flex-col gap-4">
+              {/* DYNAMIC LAYER INSPECTOR POPUP PANEL */}
+              <div className="bg-slate-955 border border-slate-900 rounded-3xl p-3.5 shadow-xl flex flex-col gap-3">
+                {/* Quick-switch layout tabs */}
+                <div className="grid grid-cols-3 bg-slate-900/60 p-1 rounded-2xl border border-slate-900/80 gap-1">
+                  {[
+                    { key: 'sunglasses', label: '🕶️ Shades' },
+                    { key: 'joint', label: '🚬 Joint' },
+                    { key: 'text', label: '💬 Watermark' },
+                  ].map((layer) => (
+                    <button
+                      key={layer.key}
+                      type="button"
+                      onClick={() => setSelectedElement(layer.key as SelectedElementType)}
+                      className={`py-3 px-2 rounded-xl text-xs md:text-sm font-sans font-bold transition-all cursor-pointer ${
+                        selectedElement === layer.key
+                          ? 'bg-slate-800 text-white shadow-md border border-slate-700/50'
+                          : 'text-slate-455 hover:text-slate-200 hover:bg-slate-900/50 border border-transparent'
+                      }`}
+                    >
+                      {layer.label}
+                    </button>
+                  ))}
+                </div>
 
-                  {/* Design Variant Style Selection Deck for active elements */}
+                {/* Transform settings tailored exactly to the selected layer */}
+                <div className="space-y-4 pt-1">
+                  
+                  {/* SHADES TAB CONTENT */}
                   {selectedElement === 'sunglasses' && (
-                    <div className="pt-4 border-t border-slate-900 mt-4 space-y-2">
-                      <label className="block text-xs font-mono font-medium text-slate-400">
-                        Choose Sunglasses Style:
-                      </label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { id: 'classic', label: '🕶️ Classic Narrow', desc: 'Traditional narrow b/w pixel' },
-                          { id: 'aviator', label: '🕶️ Droop Style', desc: 'Pixelated teardrop b/w' },
-                          { id: 'goggles', label: '🕶️ Chunky Block', desc: 'Extra thick blocky b/w' },
-                        ].map((style) => (
-                          <button
-                            key={style.id}
-                            type="button"
-                            onClick={() => setSunglassesStyle(style.id as any)}
-                            className={`p-2 rounded-xl border text-center transition-all ${
-                              sunglassesStyle === style.id
-                                ? 'bg-emerald-500/10 border-emerald-500/80 text-white shadow-[0_0_8px_rgba(16,185,129,0.15)]'
-                                : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-750 hover:text-slate-200'
-                            }`}
-                          >
-                            <div className="text-[11px] font-sans font-bold">{style.label}</div>
-                            <div className="text-[9px] text-slate-500 leading-snug mt-1">{style.desc}</div>
-                          </button>
-                        ))}
+                    <div className="space-y-4">
+                      {/* Sunglasses Style selection */}
+                      <div className="space-y-1.5">
+                        <label className="block text-[11px] font-mono font-medium text-slate-400">
+                          Choose Sunglasses Style:
+                        </label>
+                        <div className="grid grid-cols-5 gap-1">
+                          {[
+                            { id: 'aviator', label: 'Aviator' },
+                            { id: 'classic', label: 'Classic' },
+                            { id: 'goggles', label: 'Goggles' },
+                            { id: 'visor', label: 'Visor' },
+                            { id: 'stacked', label: 'Stacked' },
+                          ].map((style) => (
+                            <button
+                              key={style.id}
+                              type="button"
+                              onClick={() => setSunglassesStyle(style.id as any)}
+                              className={`p-1 rounded-xl border text-center transition-all cursor-pointer flex items-center justify-center min-h-[36px] ${
+                                sunglassesStyle === style.id
+                                  ? 'bg-emerald-500/10 border-emerald-500/80 text-white shadow-[0_0_8px_rgba(16,185,129,0.15)]'
+                                  : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-755 hover:text-slate-205'
+                              }`}
+                            >
+                              <div className="text-[10px] font-sans font-bold">{style.label}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Masking Eraser deck (only relevant for overlays) */}
+                      <div className="pt-4 border-t border-slate-900 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-1">
+                          <span>Background Eraser Brush</span>
+                          <span className="text-emerald-400">{eraserBrushSize}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="2"
+                          max="18"
+                          step="1"
+                          value={eraserBrushSize}
+                          onChange={(e) => setEraserBrushSize(parseInt(e.target.value))}
+                          className="w-full accent-emerald-400 cursor-ew-resize py-1 mb-2.5"
+                        />
+                        <EraserCanvas
+                          elementType="sunglasses"
+                          erasePaths={sunglassesErasePaths}
+                          onChangeErasePaths={setSunglassesErasePaths}
+                          brushSize={eraserBrushSize}
+                          sunglassesStyle={sunglassesStyle}
+                          jointStyle={jointStyle}
+                        />
                       </div>
                     </div>
                   )}
 
+                  {/* JOINT TAB CONTENT */}
                   {selectedElement === 'joint' && (
-                    <div className="pt-4 border-t border-slate-900 mt-4 space-y-2">
-                      <label className="block text-xs font-mono font-medium text-slate-400">
-                        Choose Joint Style:
-                      </label>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        {[
-                          { id: 'classic', label: '🚬 Classic roll', desc: 'Traditional white joint' },
-                          { id: 'cigar', label: '🪵 Cuban Cigar', desc: 'Maduro wrap + label band' },
-                          { id: 'cone', label: '📐 Paper Cone', desc: 'Tapered herbal spliff' },
-                          { id: 'photo', label: '🔥 Photo Joint', desc: 'Photo-realistic unbleached spliff' },
-                        ].map((style) => (
-                          <button
-                            key={style.id}
-                            type="button"
-                            onClick={() => setJointStyle(style.id as any)}
-                            className={`p-2 rounded-xl border text-center transition-all flex flex-col justify-between ${
-                              jointStyle === style.id
-                                ? 'bg-emerald-500/10 border-emerald-500/80 text-white shadow-[0_0_8px_rgba(16,185,129,0.15)]'
-                                : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-750 hover:text-slate-200'
-                            }`}
-                          >
-                            <div className="text-[11px] font-sans font-bold">{style.label}</div>
-                            <div className="text-[9px] text-slate-500 leading-snug mt-1">{style.desc}</div>
-                          </button>
-                        ))}
+                    <div className="space-y-4">
+                      {/* Joint Style selection */}
+                      <div className="space-y-1.5">
+                        <label className="block text-[11px] font-mono font-medium text-slate-400">
+                          Choose Joint Style:
+                        </label>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+                          {[
+                            { id: 'photo', label: '☘️ OG Kush' },
+                            { id: 'classic', label: '🚬 Ganja' },
+                            { id: 'cigar', label: '🪵 El Blunto' },
+                            { id: 'cone', label: '📐 Purple Haze' },
+                          ].map((style) => (
+                            <button
+                              key={style.id}
+                              type="button"
+                              onClick={() => setJointStyle(style.id as any)}
+                              className={`p-1.5 rounded-xl border text-center transition-all cursor-pointer flex items-center justify-center min-h-[36px] ${
+                                jointStyle === style.id
+                                  ? 'bg-emerald-500/10 border-emerald-500/80 text-white shadow-[0_0_8px_rgba(16,185,129,0.15)]'
+                                  : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-755 hover:text-slate-205'
+                              }`}
+                            >
+                              <div className="text-[10px] font-sans font-bold">{style.label}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Smoke Color selection */}
+                      <div className="pt-4 border-t border-slate-900 space-y-2">
+                        <label className="block text-[11px] font-mono font-medium text-slate-400">
+                          Smoke Color:
+                        </label>
+                        <div className="flex items-center gap-3.5 py-1">
+                          {[
+                            { name: 'Vapor Neon', hex: '#34d399', preset: 'neon' },
+                            { name: 'Purple Haze', hex: '#a855f7', preset: 'haze' },
+                            { name: 'Sunset Glow', hex: '#f97316', preset: 'sunset' },
+                            { name: 'Coal Black', hex: '#18181b', preset: 'black' },
+                            { name: 'Ice Classic', hex: '#ffffff', preset: 'classic' },
+                          ].map((smoke) => (
+                            <button
+                              key={smoke.preset}
+                              type="button"
+                              onClick={() => setSmokeConfig({ ...smokeConfig, color: smoke.hex, type: smoke.preset as any })}
+                              className={`w-10 h-10 rounded-full shrink-0 aspect-square transition-all cursor-pointer border-2 ${
+                                smokeConfig.type === smoke.preset
+                                  ? 'border-purple-500 scale-110 shadow-lg shadow-purple-500/30'
+                                  : 'border-slate-800 hover:border-slate-600 hover:scale-105'
+                              }`}
+                              style={{ backgroundColor: smoke.hex }}
+                              title={smoke.name}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Smoke Intensity slider */}
+                        <div className="bg-slate-900/30 p-2 rounded-xl border border-slate-900/60 mt-1">
+                          <div className="flex justify-between text-[10px] font-mono text-slate-455 mb-0.5">
+                            <span>Smoke Intensity level</span>
+                            <span className="text-purple-400">{smokeConfig.intensity}/5</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="5"
+                            step="1"
+                            value={smokeConfig.intensity}
+                            onChange={(e) => setSmokeConfig({ ...smokeConfig, intensity: parseInt(e.target.value) })}
+                            className="w-full accent-purple-400 cursor-ew-resize py-1"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Masking Eraser deck (only relevant for overlays) */}
+                      <div className="pt-4 border-t border-slate-900 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-1">
+                          <span>Background Eraser Brush</span>
+                          <span className="text-emerald-400">{eraserBrushSize}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="2"
+                          max="18"
+                          step="1"
+                          value={eraserBrushSize}
+                          onChange={(e) => setEraserBrushSize(parseInt(e.target.value))}
+                          className="w-full accent-emerald-400 cursor-ew-resize py-1 mb-2.5"
+                        />
+                        <EraserCanvas
+                          elementType="joint"
+                          erasePaths={jointErasePaths}
+                          onChangeErasePaths={setJointErasePaths}
+                          brushSize={eraserBrushSize}
+                          sunglassesStyle={sunglassesStyle}
+                          jointStyle={jointStyle}
+                        />
                       </div>
                     </div>
                   )}
 
-                  {/* Masking Eraser deck (only relevant for overlays) */}
-                  {(selectedElement === 'sunglasses' || selectedElement === 'joint') && (
-                    <div className="pt-4 border-t border-slate-900 mt-4">
-                      <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-1">
-                        <span>Background Eraser Brush</span>
-                        <span className="text-emerald-400">{eraserBrushSize}px</span>
+                  {/* WATERMARK / TEXT TAB CONTENT */}
+                  {selectedElement === 'text' && (
+                    <div className="space-y-4">
+                      {/* Watermark input & settings */}
+                      <div className="space-y-2">
+                        <label className="block text-[11px] font-mono font-medium text-slate-400">
+                          Edit Text:
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={24}
+                          value={textConfig.content}
+                          onChange={(e) => {
+                            setTextConfig({ ...textConfig, content: e.target.value });
+                            setSelectedElement('text');
+                          }}
+                          className="w-full bg-slate-900 border border-slate-850 focus:border-cyan-500/50 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none font-mono"
+                          placeholder="e.g. #smokefleet"
+                        />
+
+                        <div className="flex items-center justify-between gap-4 mt-0.5">
+                          {/* Drop Shadow Checkbox */}
+                          <label className="flex items-center gap-2 cursor-pointer select-none text-[10px] font-mono text-slate-400 font-bold uppercase">
+                            <input
+                              type="checkbox"
+                              checked={textConfig.dropShadow !== false}
+                              onChange={(e) => {
+                                setTextConfig({ ...textConfig, dropShadow: e.target.checked });
+                                setSelectedElement('text');
+                              }}
+                              className="w-4 h-4 rounded bg-slate-900 border-slate-800 text-cyan-500 focus:ring-cyan-500/20 focus:ring-offset-slate-950 accent-cyan-500"
+                            />
+                            <span>Drop Shadow</span>
+                          </label>
+
+                          {/* Opacity Slider */}
+                          <div className="flex-grow max-w-[150px]">
+                            <div className="flex justify-between text-[9px] font-mono text-slate-455 mb-0.5">
+                              <span>Shadow Opacity</span>
+                              <span className="text-cyan-400">{Math.round((textConfig.shadowOpacity ?? 0.3) * 100)}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0.0"
+                              max="1.0"
+                              step="0.05"
+                              value={textConfig.shadowOpacity ?? 0.3}
+                              onChange={(e) => {
+                                setTextConfig({ ...textConfig, shadowOpacity: parseFloat(e.target.value) });
+                                setSelectedElement('text');
+                              }}
+                              className="w-full accent-cyan-500 cursor-ew-resize py-0.5"
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <input
-                        type="range"
-                        min="2"
-                        max="18"
-                        step="1"
-                        value={eraserBrushSize}
-                        onChange={(e) => setEraserBrushSize(parseInt(e.target.value))}
-                        className="w-full accent-emerald-450 cursor-ew-resize py-1 mb-2.5"
-                      />
-                      <EraserCanvas
-                        elementType={selectedElement}
-                        erasePaths={selectedElement === 'sunglasses' ? sunglassesErasePaths : jointErasePaths}
-                        onChangeErasePaths={selectedElement === 'sunglasses' ? setSunglassesErasePaths : setJointErasePaths}
-                        brushSize={eraserBrushSize}
-                        sunglassesStyle={sunglassesStyle}
-                        jointStyle={jointStyle}
-                      />
+
+                      {/* Preset selector */}
+                      <div className="pt-4 border-t border-slate-900 space-y-1.5">
+                        <label className="block text-[11px] font-mono font-medium text-slate-400">
+                          Choose Preset:
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { name: 'Stable Genius', key: 'hyper-cyber', preview: 'bg-gradient-to-r from-green-400 to-cyan-400 text-transparent bg-clip-text' },
+                            { name: 'Fake News', key: 'chrome', preview: 'bg-gradient-to-b from-slate-200 to-slate-450 text-transparent bg-clip-text' },
+                            { name: 'Orange Man', key: 'solar-flare', preview: 'bg-gradient-to-r from-red-500 to-yellow-350 text-transparent bg-clip-text' },
+                            { name: 'Woke Mind Virus', key: 'vaporwave', preview: 'bg-gradient-to-r from-pink-400 to-cyan-300 text-transparent bg-clip-text' },
+                            { name: 'Total Immunity', key: 'brutalist', preview: 'text-white' },
+                            { name: 'MAGA Tears', key: 'maga-tears', preview: 'bg-gradient-to-r from-cyan-400 via-teal-300 to-blue-500 text-transparent bg-clip-text' },
+                          ].map((style) => (
+                            <button
+                              key={style.key}
+                              type="button"
+                              onClick={() => {
+                                let finalGlow = '#22d3ee';
+                                if (style.key === 'chrome') finalGlow = 'rgba(139,92,246,0.85)';
+                                else if (style.key === 'solar-flare') finalGlow = 'rgba(239,68,68,0.8)';
+                                else if (style.key === 'vaporwave') finalGlow = 'rgba(219,39,119,0.75)';
+                                else if (style.key === 'brutalist') finalGlow = '';
+                                else if (style.key === 'maga-tears') finalGlow = 'rgba(6, 182, 212, 0.8)';
+                                setTextConfig({ ...textConfig, colorPreset: style.key, glowColor: finalGlow });
+                                setSelectedElement('text');
+                              }}
+                              className={`py-2.5 px-2.5 rounded-xl border text-center font-sans transition-all cursor-pointer ${
+                                textConfig.colorPreset === style.key
+                                  ? 'bg-slate-900 border-cyan-400 text-white font-bold'
+                                  : 'border-slate-900 bg-slate-955 text-slate-455 hover:text-slate-225 hover:bg-slate-900/30'
+                              }`}
+                            >
+                              <span className={`${style.preview} font-black uppercase text-xs md:text-sm tracking-wider`}>
+                                {style.name}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Font selector */}
+                      <div className="pt-4 border-t border-slate-900 space-y-1.5">
+                        <label className="block text-[11px] font-mono font-medium text-slate-400">
+                          Choose Font Typography:
+                        </label>
+                        <div className="flex flex-wrap gap-2 items-center">
+                          {['JetBrains Mono', 'Impact', 'Space Grotesk', 'Playfair Display', 'Inter'].map((font) => (
+                            <button
+                              key={font}
+                              type="button"
+                              onClick={() => {
+                                setTextConfig({ ...textConfig, fontFamily: font });
+                                setSelectedElement('text');
+                              }}
+                              className={`px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition-all border cursor-pointer ${
+                                textConfig.fontFamily === font
+                                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 font-bold'
+                                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                              }`}
+                              style={{ fontFamily: font }}
+                            >
+                              {font}
+                            </button>
+                          ))}
+
+                          {/* "Other" Dropdown */}
+                          <div className="relative">
+                            <select
+                              value={['JetBrains Mono', 'Impact', 'Space Grotesk', 'Playfair Display', 'Inter'].includes(textConfig.fontFamily) ? '' : textConfig.fontFamily}
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  setTextConfig({ ...textConfig, fontFamily: e.target.value });
+                                  setSelectedElement('text');
+                                }
+                              }}
+                              className={`px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition-all border bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 focus:outline-none focus:border-cyan-500/50 cursor-pointer ${
+                                !['JetBrains Mono', 'Impact', 'Space Grotesk', 'Playfair Display', 'Inter'].includes(textConfig.fontFamily)
+                                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 font-bold'
+                                  : ''
+                              }`}
+                              style={{
+                                fontFamily: !['JetBrains Mono', 'Impact', 'Space Grotesk', 'Playfair Display', 'Inter'].includes(textConfig.fontFamily)
+                                  ? textConfig.fontFamily
+                                  : undefined
+                              }}
+                            >
+                              <option value="" disabled className="bg-slate-950 text-slate-500 font-sans">
+                                Other Fonts...
+                              </option>
+                              {[
+                                'Bebas Neue',
+                                'Poppins',
+                                'Montserrat',
+                                'Oswald',
+                                'Permanent Marker',
+                                'Press Start 2P',
+                                'Cinzel',
+                                'Righteous',
+                                'Syne',
+                                'Creepster',
+                                'Lobster',
+                                'Pacifico',
+                                'Russo One',
+                                'Syncopate'
+                              ].map((f) => (
+                                <option key={f} value={f} className="bg-slate-950 text-slate-200" style={{ fontFamily: f }}>
+                                  {f}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
+
                 </div>
-              )}
-
+              </div>
             </div>
-          </div>
+          )}
 
+          {/* STEP 3: DOWNLOAD */}
+          {activeStep === 'download' && (
+            <div className="flex flex-col gap-5">
+              {/* DOWNLOAD BUTTON BOX */}
+              <section className="bg-slate-950 border border-slate-900 rounded-3xl p-6 shadow-xl flex flex-col gap-5 items-center text-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/5 to-transparent rounded-full pointer-events-none" />
+                <div className="bg-emerald-500/10 p-4 rounded-full text-emerald-400 shrink-0">
+                  <Download className="w-8 h-8 stroke-[2]" />
+                </div>
+                
+                <div>
+                  <h3 className="text-base font-black text-white uppercase tracking-wide">
+                    Compile and Download PFP
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1 max-w-sm leading-relaxed">
+                    Ready to launch? Click the button below to compile all vector layers, 3D rotations, and smoke particles into a high-res 1200x1200px PNG.
+                  </p>
+                </div>
 
-
-          {/* COLOR ALCHEMY & SMOKE EMITTER CONFIG */}
-          <section className="bg-slate-950 border border-slate-900 rounded-3xl p-4 md:p-5 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-slate-450 font-mono tracking-wider uppercase">
-                Smoke Alchemy Presets
-              </h3>
-              <span className="text-[10px] font-mono text-purple-400 font-bold">{smokeConfig.type.toUpperCase()}</span>
-            </div>
-
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                { name: 'Vapor Neon', hex: '#34d399', preset: 'neon' },
-                { name: 'Purple Haze', hex: '#a855f7', preset: 'haze' },
-                { name: 'Sunset Glow', hex: '#f97316', preset: 'sunset' },
-                { name: 'Ice Classic', hex: '#ffffff', preset: 'classic' },
-              ].map((smoke) => (
                 <button
-                  key={smoke.preset}
-                  onClick={() => setSmokeConfig({ ...smokeConfig, color: smoke.hex, type: smoke.preset as any })}
-                  className={`p-1.5 rounded-xl flex flex-col items-center justify-center gap-1.5 h-14 transition-all border text-center ${
-                    smokeConfig.type === smoke.preset
-                      ? 'bg-slate-900 border-purple-500 shadow-md'
-                      : 'border-slate-900 bg-slate-950 hover:bg-slate-900/60'
-                  }`}
+                  type="button"
+                  onClick={compileAndDownload}
+                  disabled={!imageSrc || isExporting}
+                  className={`w-full font-sans font-black text-sm py-3 px-5 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all select-none shadow-lg cursor-pointer
+                    ${(!imageSrc || isExporting)
+                      ? 'bg-slate-900 border border-slate-850/60 text-slate-600 cursor-not-allowed opacity-60' 
+                      : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-slate-100 hover:to-slate-100 text-slate-950 shadow-emerald-500/20 shadow-xl'
+                    }`}
+                  title={!imageSrc ? "Please upload a profile photo first" : "Render and download composite image"}
                 >
-                  <div className="w-2.5 h-2.5 rounded-full border border-white/20 shrink-0" style={{ backgroundColor: smoke.hex }} />
-                  <span className="text-[9px] text-slate-300 font-sans font-semibold leading-tight select-none">
-                    {smoke.name}
-                  </span>
+                  {isExporting ? (
+                    <>
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      <span>Compiling avatar...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-5 h-5 stroke-[2.5]" />
+                      <span>Download High-Res Avatar</span>
+                    </>
+                  )}
                 </button>
-              ))}
+              </section>
             </div>
-
-            <div className="bg-slate-900/30 p-3 rounded-xl border border-slate-900/60 mt-1">
-              <div className="flex justify-between text-[11px] font-mono text-slate-400 mb-1">
-                <span>Smoke Intensity level</span>
-                <span className="text-purple-400">{smokeConfig.intensity}/5</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="5"
-                step="1"
-                value={smokeConfig.intensity}
-                onChange={(e) => setSmokeConfig({ ...smokeConfig, intensity: parseInt(e.target.value) })}
-                className="w-full accent-purple-400 cursor-ew-resize py-1"
-              />
-            </div>
-          </section>
-
-          {/* WATERMARK STYLIST & BRANDING DECK */}
-          <section className="bg-slate-950 border border-slate-900 rounded-3xl p-4 md:p-5 flex flex-col gap-3">
-            <h3 className="text-xs font-bold text-slate-450 font-mono tracking-wider uppercase">
-              Branded Watermark Layout
-            </h3>
-
-            <input
-              type="text"
-              maxLength={24}
-              value={textConfig.content}
-              onChange={(e) => {
-                setTextConfig({ ...textConfig, content: e.target.value });
-                setSelectedElement('text');
-              }}
-              className="w-full bg-slate-900 border border-slate-850 focus:border-cyan-500/50 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none font-mono"
-              placeholder="e.g. #smokefleet"
-            />
-
-            <div>
-              <label className="text-[10px] uppercase font-mono text-slate-500 block mb-1.5 font-bold">
-                Gradation Styling Preset
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                {[
-                  { name: 'Hyper Cyber', key: 'hyper-cyber', preview: 'bg-gradient-to-r from-green-400 to-cyan-400 text-transparent bg-clip-text' },
-                  { name: 'Chrome Ring', key: 'chrome', preview: 'bg-gradient-to-b from-slate-200 to-slate-450 text-transparent bg-clip-text' },
-                  { name: 'Solar Flare', key: 'solar-flare', preview: 'bg-gradient-to-r from-red-500 to-yellow-350 text-transparent bg-clip-text' },
-                  { name: 'Vapor Dream', key: 'vaporwave', preview: 'bg-gradient-to-r from-pink-400 to-cyan-300 text-transparent bg-clip-text' },
-                  { name: 'Brutalist Deck', key: 'brutalist', preview: 'text-white' },
-                ].map((style) => (
-                  <button
-                    key={style.key}
-                    onClick={() => {
-                      let finalGlow = '#22d3ee';
-                      if (style.key === 'chrome') finalGlow = 'rgba(139,92,246,0.85)';
-                      else if (style.key === 'solar-flare') finalGlow = 'rgba(239,68,68,0.8)';
-                      else if (style.key === 'vaporwave') finalGlow = 'rgba(219,39,119,0.75)';
-                      else if (style.key === 'brutalist') finalGlow = '';
-                      setTextConfig({ ...textConfig, colorPreset: style.key, glowColor: finalGlow });
-                      setSelectedElement('text');
-                    }}
-                    className={`p-1.5 rounded-xl border text-center font-sans text-[10px] flex justify-center items-center h-9 transition-all ${
-                      textConfig.colorPreset === style.key
-                        ? 'bg-slate-900 border-cyan-400 text-white font-bold'
-                        : 'border-slate-900 bg-slate-950 text-slate-450 hover:text-slate-250 hover:bg-slate-900/30'
-                    }`}
-                  >
-                    <span className={`${style.preview} font-black uppercase text-[9px] tracking-tight`}>
-                      {style.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[10px] uppercase font-mono text-slate-500 block mb-1 font-bold">Choose Font Typography</label>
-              <div className="flex flex-wrap gap-1">
-                {['JetBrains Mono', 'Impact', 'Space Grotesk', 'Playfair Display', 'Inter'].map((font) => (
-                  <button
-                    key={font}
-                    onClick={() => {
-                      setTextConfig({ ...textConfig, fontFamily: font });
-                      setSelectedElement('text');
-                    }}
-                    className={`px-2.5 py-1 rounded-full text-[10px] transition-colors border ${
-                      textConfig.fontFamily === font
-                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 font-bold'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                    style={{ fontFamily: font }}
-                  >
-                    {font}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
-
-
+          )}
 
         </div>
       </main>
@@ -1486,31 +1786,13 @@ export default function App() {
               className="bg-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 max-w-sm w-full shadow-2xl flex flex-col gap-4 relative my-auto max-h-[92vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Top Close Button */}
-              <button
-                onClick={() => setShowExportModal(false)}
-                className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-850 hover:bg-slate-800 p-1.5 rounded-full border border-slate-750 transition-colors cursor-pointer"
-                title="Close overlay"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-
-              <div className="text-center pt-2">
-                <span className="inline-block bg-emerald-500/10 text-emerald-400 text-[9px] font-mono uppercase border border-emerald-500/20 px-2.5 py-1 rounded-full mb-1">
-                  Image Rendered Successfully!
-                </span>
-                <h3 className="font-sans font-black text-white text-base leading-tight uppercase">
-                  Your High-Res Avatar
-                </h3>
-              </div>
-
               {/* High-res Image Preview */}
-              <div className="relative aspect-square w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center shadow-inner group max-h-[260px] md:max-h-full">
+              <div className="relative aspect-square w-full rounded-2xl overflow-hidden bg-slate-955 border border-slate-805 flex items-center justify-center shadow-inner group max-h-[260px] md:max-h-full">
                 {exportedImage ? (
                    <img
                      src={exportedImage}
                      alt="Smokefleet High-Res PFP"
-                     className="w-full h-full object-contain cursor-pointer"
+                     className="w-full h-full object-contain cursor-pointer rounded-2xl"
                      referrerPolicy="no-referrer"
                      onClick={() => {
                        const tempLink = document.createElement('a');
@@ -1522,21 +1804,6 @@ export default function App() {
                 ) : (
                   <div className="text-slate-500 text-xs font-mono">Generating render ...</div>
                 )}
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/85 to-transparent p-2 text-center pointer-events-none">
-                  <span className="text-[9px] font-sans text-slate-350 font-bold uppercase tracking-wider">
-                    👆 Tap &amp; Hold to Save Image
-                  </span>
-                </div>
-              </div>
-
-              {/* Instructions Callout */}
-              <div className="bg-slate-950 border border-slate-850 p-3.5 rounded-xl flex flex-col gap-1 text-[11px] text-slate-400 leading-relaxed font-sans">
-                <div className="flex items-center gap-1.5 font-bold text-slate-200 mb-0.5">
-                  <Shield className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>How to Save:</span>
-                </div>
-                <p><strong className="text-white">📱 Mobile:</strong> Tap and hold (long press) the image above and select <span className="text-emerald-400 font-bold">"Save Image"</span>.</p>
-                <p><strong className="text-white">💻 Computer:</strong> Click the button below or right-click image and choose <span className="text-emerald-400 font-bold">"Save Image As..."</span>.</p>
               </div>
 
               {/* Accessibility dual actions */}
@@ -1562,7 +1829,7 @@ export default function App() {
                   className="w-full bg-slate-800 hover:bg-slate-755 text-slate-300 font-sans font-bold text-xs py-3 rounded-xl flex items-center justify-center gap-1 border border-slate-705 active:scale-[0.98] transition-all cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
-                  Close Overlay
+                  Close
                 </button>
               </div>
             </motion.div>
@@ -1595,15 +1862,6 @@ export default function App() {
               >
                 <X className="w-3.5 h-3.5" />
               </button>
-
-              <div className="text-center pt-2">
-                <span className="inline-block bg-indigo-500/10 text-indigo-400 text-[10px] font-mono uppercase border border-indigo-500/20 px-2.5 py-1 rounded-full mb-1">
-                  X Profile Live Simulator
-                </span>
-                <h3 className="font-sans font-black text-white text-base leading-tight uppercase">
-                  X Preview
-                </h3>
-              </div>
 
               {/* TwitterPreview Component inside Modal */}
               <div className="w-full">

@@ -1,7 +1,7 @@
 import React from 'react';
 
 export interface SunglassesSVGProps extends React.SVGProps<SVGSVGElement> {
-  variant?: 'classic' | 'aviator' | 'goggles';
+  variant?: 'classic' | 'aviator' | 'goggles' | 'visor' | 'stacked';
 }
 
 export const SunglassesSVG: React.FC<SunglassesSVGProps> = ({ variant = 'classic', ...props }) => {
@@ -68,6 +68,40 @@ export const SunglassesSVG: React.FC<SunglassesSVGProps> = ({ variant = 'classic
           <path d="M12 12h8v4h-8v-4zm4 16h8v4h-8v-4zm4 4h8v4h-8v-4z" fill="#ffffff" />
           <path d="M12 12h8v4h-8v-4zm4 4h8v4h-8v-4zm4 8h8v4h-8v-4z" fill="#ffffff" />
           <path d="M64 12h8v4h-8v-4zm4 4h8v4h-8v-4zm4 8h8v4h-8v-4z" fill="#ffffff" />
+        </>
+      )}
+      {variant === 'visor' && (
+        <>
+          {/* Continuous blocky visor style */}
+          <path d="M4 4h92v8H4V4z" fill="#000000" />
+          <path d="M8 12h84v4H8v-4z" fill="#000000" />
+          <path d="M12 4h4v4h-4V4z" fill="#ffffff" />
+          <path d="M16 8h4v4h-4v-4z" fill="#ffffff" />
+          <path d="M20 12h4v4h-4v-4z" fill="#ffffff" />
+          <path d="M64 4h4v4h-4V4z" fill="#ffffff" />
+          <path d="M68 8h4v4h-4v-4z" fill="#ffffff" />
+          <path d="M72 12h4v4h-4v-4z" fill="#ffffff" />
+        </>
+      )}
+
+      {variant === 'stacked' && (
+        <>
+          {/* Double stacked sunglasses */}
+          <path d="M4 0h92v4H4V0z" fill="#000000" />
+          <path d="M8 4h32v4H8V4zm4 4h24v4H12V8zm4 4h16v4H16v-4z" fill="#000000" />
+          <path d="M60 4h32v4H60V4zm4 4h24v4H64V8zm4 4h16v4H68v-4z" fill="#000000" />
+          <path d="M12 4h4v4h-4V4z" fill="#ffffff" />
+          <path d="M16 8h4v4h-4v-4z" fill="#ffffff" />
+          <path d="M64 4h4v4h-4V4z" fill="#ffffff" />
+          <path d="M68 8h4v4h-4v-4z" fill="#ffffff" />
+          
+          <path d="M4 8h92v4H4V8z" fill="#000000" />
+          <path d="M8 12h32v4H8v-4zm4 4h24v4H12v-4zm4 4h16v4H16v-4z" fill="#000000" />
+          <path d="M60 12h32v4H60v-4zm4 4h24v4H64v-4zm4 4h16v4H68v-4z" fill="#000000" />
+          <path d="M12 12h4v4h-4v-4z" fill="#ffffff" />
+          <path d="M16 16h4v4h-4v-4z" fill="#ffffff" />
+          <path d="M64 12h4v4h-4v-4z" fill="#ffffff" />
+          <path d="M68 16h4v4h-4v-4z" fill="#ffffff" />
         </>
       )}
     </svg>

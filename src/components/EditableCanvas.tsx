@@ -3,6 +3,31 @@ import { ElementTransform, SelectedElementType, SmokeConfig, TextConfig, ErasePa
 import { SunglassesSVG, JointSVG } from './AssetsSVG';
 import JointSmoke from './JointSmoke';
 
+const hexToRgba = (colorStr: string, alpha: number): string => {
+  if (!colorStr) return 'transparent';
+  if (colorStr.startsWith('rgba')) {
+    return colorStr.replace(/[\d\.]+\)$/, `${alpha})`);
+  }
+  if (colorStr.startsWith('rgb')) {
+    return colorStr.replace('rgb', 'rgba').replace(/\)$/, `, ${alpha})`);
+  }
+  if (colorStr.startsWith('#')) {
+    const hex = colorStr.trim();
+    if (hex.length === 4) {
+      const r = parseInt(hex[1] + hex[1], 16);
+      const g = parseInt(hex[2] + hex[2], 16);
+      const b = parseInt(hex[3] + hex[3], 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    } else if (hex.length === 7) {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+  }
+  return colorStr;
+};
+
 interface EditableCanvasProps {
   imageSrc: string;
   imageTransform: ElementTransform;
@@ -21,8 +46,9 @@ interface EditableCanvasProps {
   onUpdateText: (t: ElementTransform) => void;
   setSelectedElement: (type: SelectedElementType) => void;
   isMirrored?: boolean;
-  sunglassesStyle?: 'classic' | 'aviator' | 'goggles';
-  jointStyle?: 'classic' | 'cigar' | 'cone';
+  sunglassesStyle?: 'classic' | 'aviator' | 'goggles' | 'visor' | 'stacked';
+  jointStyle?: 'classic' | 'cigar' | 'cone' | 'photo';
+  activeStep?: 'photo' | 'customize' | 'download';
 }
 
 // Convert absolute points to SVG path format string
@@ -55,6 +81,7 @@ export default function EditableCanvas({
   isMirrored,
   sunglassesStyle = 'classic',
   jointStyle = 'classic',
+  activeStep = 'photo',
 }: EditableCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragStartRef = useRef<{
@@ -265,22 +292,67 @@ export default function EditableCanvas({
 
   const jointTip = getJointTipOffset();
 
-  // Pick CSS style for text preset gradients
   const getTextPresetClass = () => {
     switch (textConfig.colorPreset) {
       case 'chrome':
-        return 'bg-gradient-to-b from-indigo-200 via-neutral-100 to-indigo-400 bg-clip-text text-transparent filter drop-shadow-[0_4px_12px_rgba(139,92,246,0.8)]';
+        return 'bg-gradient-to-b from-indigo-200 via-neutral-100 to-indigo-400 bg-clip-text text-transparent';
       case 'solar-flare':
-        return 'bg-gradient-to-r from-red-500 via-orange-400 to-yellow-300 bg-clip-text text-transparent filter drop-shadow-[0_4px_10px_rgba(239,68,68,0.7)] font-black italic';
+        return 'bg-gradient-to-r from-red-500 via-orange-400 to-yellow-300 bg-clip-text text-transparent font-black italic';
       case 'hyper-cyber':
-        return 'bg-gradient-to-r from-green-400 to-cyan-400 bg-clip-text text-transparent filter drop-shadow-[0_4px_8px_rgba(34,197,94,0.6)] font-mono uppercase tracking-wider';
+        return 'bg-gradient-to-r from-green-400 to-cyan-400 bg-clip-text text-transparent uppercase tracking-wider';
       case 'brutalist':
-        return 'text-white border-4 border-black stroke-slate-950 font-black tracking-tighter shadow-[4px_4px_0px_#000000]';
+        return 'text-white stroke-slate-950 font-black tracking-tighter';
       case 'vaporwave':
-        return 'bg-gradient-to-r from-pink-400 via-purple-300 to-cyan-300 bg-clip-text text-transparent filter drop-shadow-[0_4px_10px_rgba(219,39,119,0.7)]';
+        return 'bg-gradient-to-r from-pink-400 via-purple-300 to-cyan-300 bg-clip-text text-transparent';
+      case 'maga-tears':
+        return 'bg-gradient-to-r from-cyan-400 via-teal-300 to-blue-500 bg-clip-text text-transparent font-black italic uppercase tracking-wider';
       default:
-        return 'text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]';
+        return 'text-white';
     }
+  };
+
+  const getTextFilterStyle = () => {
+    const scale = textTransform.scale;
+    const shadowOpacity = textConfig.shadowOpacity ?? 0.3;
+    const hasShadow = textConfig.dropShadow !== false;
+    
+    let glowFilter = '';
+    
+    switch (textConfig.colorPreset) {
+      case 'chrome':
+        glowFilter = `drop-shadow(0px 0px ${6 * scale}px rgba(139, 92, 246, 0.85))`;
+        break;
+      case 'solar-flare':
+        glowFilter = `drop-shadow(0px 0px ${5 * scale}px rgba(239, 68, 68, 0.85))`;
+        break;
+      case 'hyper-cyber':
+        glowFilter = `drop-shadow(0px 0px ${4 * scale}px rgba(34, 197, 94, 0.85))`;
+        break;
+      case 'vaporwave':
+        glowFilter = `drop-shadow(0px 0px ${5 * scale}px rgba(219, 39, 119, 0.85))`;
+        break;
+      case 'maga-tears':
+        glowFilter = `drop-shadow(0px 0px ${5 * scale}px rgba(6, 182, 212, 0.85))`;
+        break;
+      case 'brutalist':
+        glowFilter = '';
+        break;
+      default:
+        if (textConfig.glowColor) {
+          glowFilter = `drop-shadow(0px 0px ${6 * scale}px ${hexToRgba(textConfig.glowColor, 0.85)})`;
+        }
+        break;
+    }
+
+    const blackShadowFilter = hasShadow
+      ? `drop-shadow(0px ${2 * scale}px ${1.5 * scale}px rgba(0, 0, 0, ${shadowOpacity}))`
+      : '';
+
+    return [glowFilter, blackShadowFilter].filter(Boolean).join(' ');
+  };
+
+  const getTextShadowStyle = () => {
+    return 'none';
   };
 
   const currentTextClass = getTextPresetClass();
@@ -298,16 +370,26 @@ export default function EditableCanvas({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
-      onClick={() => setSelectedElement('background')}
+      onClick={() => {
+        if (activeStep === 'photo') {
+          setSelectedElement('background');
+        }
+      }}
       className="relative w-full aspect-square bg-slate-900 rounded-2xl overflow-hidden cursor-crosshair border border-slate-800 touch-none shadow-inner group-hover:border-slate-700/60 transition-all"
       id="smokefleet-editable-stage"
     >
       {/* Background Face Image Box */}
       {imageSrc ? (
         <div
-          onPointerDown={(e) => handlePointerDown(e, 'background')}
-          className={`w-full h-full select-none absolute inset-0 overflow-hidden cursor-move ${
-            selectedElement === 'background' ? 'ring-2 ring-indigo-500/50' : ''
+          onPointerDown={(e) => {
+            if (activeStep === 'photo') {
+              handlePointerDown(e, 'background');
+            }
+          }}
+          className={`w-full h-full select-none absolute inset-0 overflow-hidden ${
+            activeStep === 'photo' ? 'cursor-move' : ''
+          } ${
+            selectedElement === 'background' && activeStep === 'photo' ? 'ring-2 ring-indigo-500/50' : ''
           }`}
           id="background-canvas-box"
         >
@@ -397,11 +479,6 @@ export default function EditableCanvas({
             <>
               {/* Bounding box outline */}
               <div className="absolute -inset-2 border border-dashed border-emerald-400 pointer-events-none rounded z-50" />
-
-              {/* Angle indicator box on hover/drag */}
-              <div className="absolute -top-14 left-1/2 -translate-x-1/2 bg-slate-950/90 border border-slate-800 text-emerald-400 font-mono px-1.5 py-0.5 rounded text-[9px] pointer-events-none z-55 whitespace-nowrap shadow-lg">
-                R: {Math.round(sunglassesTransform.rotateZ)}° / S: {sunglassesTransform.scale.toFixed(2)}x
-              </div>
 
               {/* Center rotation line extension */}
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-[1px] h-4 bg-emerald-400/80 pointer-events-none z-50" />
@@ -508,11 +585,6 @@ export default function EditableCanvas({
               {/* Bounding box outline */}
               <div className="absolute -inset-2 border border-dashed border-emerald-400 pointer-events-none rounded z-50" />
 
-              {/* Angle indicator box on hover/drag */}
-              <div className="absolute -top-14 left-1/2 -translate-x-1/2 bg-slate-950/90 border border-slate-800 text-emerald-400 font-mono px-1.5 py-0.5 rounded text-[9px] pointer-events-none z-55 whitespace-nowrap shadow-lg">
-                R: {Math.round(jointTransform.rotateZ)}° / S: {jointTransform.scale.toFixed(2)}x
-              </div>
-
               {/* Center rotation line extension */}
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-[1px] h-4 bg-emerald-400/80 pointer-events-none z-50" />
 
@@ -572,6 +644,7 @@ export default function EditableCanvas({
             intensity={smokeConfig.intensity}
             active={smokeConfig.intensity > 0}
             angle={jointTransform.rotateZ}
+            type={smokeConfig.type}
           />
         </div>
       )}
@@ -614,11 +687,16 @@ export default function EditableCanvas({
             style={{
               fontSize: `${0.095 * (parentSize.width || 400) * textTransform.scale}px`,
               lineHeight: 1.1,
-              textShadow: (textConfig.colorPreset !== 'brutalist' && !['chrome', 'solar-flare', 'hyper-cyber', 'vaporwave'].includes(textConfig.colorPreset))
-                ? (textConfig.glowColor ? `0px 0px ${8 * textTransform.scale}px ${textConfig.glowColor}, 0 ${2 * textTransform.scale}px ${4 * textTransform.scale}px rgba(0,0,0,1)` : 'none')
-                : 'none',
+              textShadow: getTextShadowStyle(),
+              filter: getTextFilterStyle(),
               // Handle brutalist outline styling separately if requested
-              WebkitTextStroke: textConfig.colorPreset === 'brutalist' ? `${2 * textTransform.scale}px #000000` : 'none',
+              WebkitTextStroke: textConfig.colorPreset === 'brutalist' ? `${2 * textTransform.scale}px #000000` : '0px transparent',
+              padding: textConfig.colorPreset === 'brutalist' ? '0.25em 0.8em' : undefined,
+              border: textConfig.colorPreset === 'brutalist' ? '0.1em solid #000000' : undefined,
+              backgroundColor: textConfig.colorPreset === 'brutalist' ? 'rgba(0, 0, 0, 0.3)' : undefined,
+              boxShadow: textConfig.colorPreset === 'brutalist' && textConfig.dropShadow !== false
+                ? `0.1em 0.1em 0px rgba(0, 0, 0, ${textConfig.shadowOpacity ?? 0.3})`
+                : undefined,
             }}
           >
             {textConfig.content}
@@ -629,11 +707,6 @@ export default function EditableCanvas({
             <>
               {/* Bounding box outline */}
               <div className="absolute -inset-2 border border-dashed border-emerald-400 pointer-events-none rounded z-50" />
-
-              {/* Angle indicator box on hover/drag */}
-              <div className="absolute -top-14 left-1/2 -translate-x-1/2 bg-slate-950/90 border border-slate-800 text-emerald-400 font-mono px-1.5 py-0.5 rounded text-[9px] pointer-events-none z-55 whitespace-nowrap shadow-lg">
-                R: {Math.round(textTransform.rotateZ)}° / S: {textTransform.scale.toFixed(2)}x
-              </div>
 
               {/* Center rotation line extension */}
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-[1px] h-4 bg-emerald-400/80 pointer-events-none z-50" />

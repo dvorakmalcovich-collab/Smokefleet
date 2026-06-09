@@ -8,7 +8,7 @@ interface EraserCanvasProps {
   erasePaths: ErasePath[];
   onChangeErasePaths: (paths: ErasePath[]) => void;
   brushSize: number;
-  sunglassesStyle: 'classic' | 'aviator' | 'goggles';
+  sunglassesStyle: 'classic' | 'aviator' | 'goggles' | 'visor' | 'stacked';
   jointStyle: 'classic' | 'cigar' | 'cone' | 'photo';
 }
 
@@ -23,6 +23,8 @@ export default function EraserCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const currentPathRef = useRef<ErasePoint[]>([]);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [canvasWidth, setCanvasWidth] = useState(300);
 
   // Bounding dimensions matching original SVG viewBox
   const viewBoxW = elementType === 'sunglasses' ? 100 : 140;
@@ -67,7 +69,6 @@ export default function EraserCanvas({
     }
 
     const img = new Image();
-    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgMarkup)));
     img.onload = () => {
       oCtx.drawImage(img, 0, 0, offscreen.width, offscreen.height);
 
@@ -93,6 +94,7 @@ export default function EraserCanvas({
       // Finally, paint masked offscreen buffer to active visible canvas
       ctx.drawImage(offscreen, 0, 0, canvas.width, canvas.height);
     };
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgMarkup)));
   }, [elementType, erasePaths, viewBoxW, viewBoxH, sunglassesStyle, jointStyle]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -117,12 +119,18 @@ export default function EraserCanvas({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
+    setCanvasWidth(rect.width);
+    setMousePos({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+
+    if (!isDrawing) return;
+
     const localX = ((e.clientX - rect.left) / rect.width) * viewBoxW;
     const localY = ((e.clientY - rect.top) / rect.height) * viewBoxH;
 
@@ -201,13 +209,21 @@ export default function EraserCanvas({
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
+          onPointerLeave={() => setMousePos(null)}
           className="w-full h-auto block touch-none"
         />
+        {mousePos && (
+          <div
+            className="absolute rounded-full border border-emerald-400 bg-emerald-450/15 pointer-events-none -translate-x-1/2 -translate-y-1/2 hidden md:block"
+            style={{
+              left: `${mousePos.x}px`,
+              top: `${mousePos.y}px`,
+              width: `${brushSize * (canvasWidth / viewBoxW)}px`,
+              height: `${brushSize * (canvasWidth / viewBoxW)}px`,
+            }}
+          />
+        )}
       </div>
-
-      <p className="text-[10px] text-slate-500 font-sans leading-normal">
-        👆 Brush/drag directly on the glasses/joint above to trim any unwanted portions (like the side stalks or tip) is updated instantly on your 3D avatar!
-      </p>
     </div>
   );
 }

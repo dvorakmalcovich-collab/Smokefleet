@@ -13,7 +13,7 @@ export type SelectedElementType = 'background' | 'sunglasses' | 'joint' | 'text'
 export interface SmokeConfig {
   color: string;
   intensity: number; // 0 to 5
-  type: 'classic' | 'neon' | 'haze' | 'sunset';
+  type: 'classic' | 'neon' | 'haze' | 'sunset' | 'black';
 }
 
 export interface TextConfig {
@@ -23,6 +23,8 @@ export interface TextConfig {
   fontSizeValue: number; // relative size
   letterSpacing: number; // spacing
   glowColor: string;
+  dropShadow?: boolean;
+  shadowOpacity?: number;
 }
 
 export interface PresetAvatar {
@@ -61,7 +63,7 @@ export interface AppStateSnapshot {
   sunglassesErasePaths: ErasePath[];
   jointErasePaths: ErasePath[];
   imageTransform?: ElementTransform;
-  sunglassesStyle?: 'classic' | 'aviator' | 'goggles';
+  sunglassesStyle?: 'classic' | 'aviator' | 'goggles' | 'visor' | 'stacked';
   jointStyle?: 'classic' | 'cigar' | 'cone' | 'photo';
 }
 

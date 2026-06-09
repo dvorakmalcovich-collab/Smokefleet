@@ -1,6 +1,6 @@
-export const getSunglassesSVGMarkup = (variant: 'classic' | 'aviator' | 'goggles') => {
+export const getSunglassesSVGMarkup = (variant: 'classic' | 'aviator' | 'goggles' | 'visor' | 'stacked') => {
   if (variant === 'aviator') {
-    return `<svg viewBox="0 0 100 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    return `<svg width="100" height="24" viewBox="0 0 100 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M4 4h92v4H4V4z" fill="#000000" />
       <path d="M8 8h36v4H8V8zm0 4h32v4H8v-4zm4 4h24v4H12v-4zm4 4h16v4H16v-4z" fill="#000000" />
       <path d="M56 8h36v4H56V8zm4 4h32v4H60v-4zm4 4h24v4H64v-4zm4 4h16v4H68v-4z" fill="#000000" />
@@ -13,7 +13,7 @@ export const getSunglassesSVGMarkup = (variant: 'classic' | 'aviator' | 'goggles
     </svg>`;
   }
   if (variant === 'goggles') {
-    return `<svg viewBox="0 0 100 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    return `<svg width="100" height="24" viewBox="0 0 100 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M4 4h92v8H4V4z" fill="#000000" />
       <path d="M4 12h40v8H4v-8zm4 8h32v4H8v-4z" fill="#000000" />
       <path d="M56 12h40v8H56v-8zm4 8h32v4H60v-4z" fill="#000000" />
@@ -22,7 +22,38 @@ export const getSunglassesSVGMarkup = (variant: 'classic' | 'aviator' | 'goggles
       <path d="M64 12h8v4h-8v-4zm4 4h8v4h-8v-4zm4 8h8v4h-8v-4z" fill="#ffffff" />
     </svg>`;
   }
-  return `<svg viewBox="0 0 100 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  if (variant === 'visor') {
+    return `<svg width="100" height="24" viewBox="0 0 100 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 4h92v8H4V4z" fill="#000000" />
+      <path d="M8 12h84v4H8v-4z" fill="#000000" />
+      <path d="M12 4h4v4h-4V4z" fill="#ffffff" />
+      <path d="M16 8h4v4h-4v-4z" fill="#ffffff" />
+      <path d="M20 12h4v4h-4v-4z" fill="#ffffff" />
+      <path d="M64 4h4v4h-4V4z" fill="#ffffff" />
+      <path d="M68 8h4v4h-4v-4z" fill="#ffffff" />
+      <path d="M72 12h4v4h-4v-4z" fill="#ffffff" />
+    </svg>`;
+  }
+  if (variant === 'stacked') {
+    return `<svg width="100" height="24" viewBox="0 0 100 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 0h92v4H4V0z" fill="#000000" />
+      <path d="M8 4h32v4H8V4zm4 4h24v4H12V8zm4 4h16v4H16v-4z" fill="#000000" />
+      <path d="M60 4h32v4H60V4zm4 4h24v4H64V8zm4 4h16v4H68v-4z" fill="#000000" />
+      <path d="M12 4h4v4h-4V4z" fill="#ffffff" />
+      <path d="M16 8h4v4h-4v-4z" fill="#ffffff" />
+      <path d="M64 4h4v4h-4V4z" fill="#ffffff" />
+      <path d="M68 8h4v4h-4v-4z" fill="#ffffff" />
+      
+      <path d="M4 8h92v4H4V8z" fill="#000000" />
+      <path d="M8 12h32v4H8v-4zm4 4h24v4H12v-4zm4 4h16v4H16v-4z" fill="#000000" />
+      <path d="M60 12h32v4H60v-4zm4 4h24v4H64v-4zm4 4h16v4H68v-4z" fill="#000000" />
+      <path d="M12 12h4v4h-4v-4z" fill="#ffffff" />
+      <path d="M16 16h4v4h-4v-4z" fill="#ffffff" />
+      <path d="M64 12h4v4h-4v-4z" fill="#ffffff" />
+      <path d="M68 16h4v4h-4v-4z" fill="#ffffff" />
+    </svg>`;
+  }
+  return `<svg width="100" height="24" viewBox="0 0 100 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M4 4h92v4H4V4z" fill="#000000" />
     <path d="M8 8h32v4H8V8zm4 4h24v4H12V12zm4 4h16v4H16V16z" fill="#000000" />
     <path d="M60 8h32v4H60V8zm4 4h24v4H64V12zm4 4h16v4H68V16z" fill="#000000" />
@@ -37,37 +68,37 @@ export const getSunglassesSVGMarkup = (variant: 'classic' | 'aviator' | 'goggles
 
 export const getJointSVGMarkup = (variant: 'classic' | 'cigar' | 'cone' | 'photo') => {
   if (variant === 'photo') {
-    return `<svg viewBox="0 0 140 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+    return `<svg width="140" height="30" viewBox="0 0 140 30" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="photoJointBody" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="15%" stopColor="#f3f4f6" />
-          <stop offset="60%" stopColor="#e5e7eb" />
-          <stop offset="85%" stopColor="#d1d5db" />
-          <stop offset="100%" stopColor="#9ca3af" />
+          <stop offset="0%" stop-color="#ffffff" />
+          <stop offset="15%" stop-color="#f3f4f6" />
+          <stop offset="60%" stop-color="#e5e7eb" />
+          <stop offset="85%" stop-color="#d1d5db" />
+          <stop offset="100%" stop-color="#9ca3af" />
         </linearGradient>
         <linearGradient id="photoCreaseShadow" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#e5e7eb" stop-opacity="0.1" />
-          <stop offset="50%" stopColor="#111827" stop-opacity="0.3" />
-          <stop offset="100%" stopColor="#e5e7eb" stop-opacity="0.1" />
+          <stop offset="0%" stop-color="#e5e7eb" stop-opacity="0.1" />
+          <stop offset="50%" stop-color="#111827" stop-opacity="0.3" />
+          <stop offset="100%" stop-color="#e5e7eb" stop-opacity="0.1" />
         </linearGradient>
         <linearGradient id="photoEmberCore" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#1e0501" />
-          <stop offset="25%" stopColor="#b91c1c" />
-          <stop offset="50%" stopColor="#fef08a" />
-          <stop offset="75%" stopColor="#f97316" />
-          <stop offset="100%" stopColor="#ef4444" />
+          <stop offset="0%" stop-color="#1e0501" />
+          <stop offset="25%" stop-color="#b91c1c" />
+          <stop offset="50%" stop-color="#fef08a" />
+          <stop offset="75%" stop-color="#f97316" />
+          <stop offset="100%" stop-color="#ef4444" />
         </linearGradient>
         <linearGradient id="emberGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#b91c1c" />
-          <stop offset="40%" stopColor="#ea580c" />
-          <stop offset="70%" stopColor="#f59e0b" />
-          <stop offset="100%" stopColor="#fffbeb" stop-opacity="0.9" />
+          <stop offset="0%" stop-color="#b91c1c" />
+          <stop offset="40%" stop-color="#ea580c" />
+          <stop offset="70%" stop-color="#f59e0b" />
+          <stop offset="100%" stop-color="#fffbeb" stop-opacity="0.9" />
         </linearGradient>
         <linearGradient id="ashGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#4a5568" />
-          <stop offset="60%" stopColor="#718096" />
-          <stop offset="100%" stopColor="#e2e8f0" />
+          <stop offset="0%" stop-color="#4a5568" />
+          <stop offset="60%" stop-color="#718096" />
+          <stop offset="100%" stop-color="#e2e8f0" />
         </linearGradient>
         <filter id="glow" x="-10%" y="-10%" width="120%" height="120%">
           <feGaussianBlur stdDeviation="0.4" result="blur" />
@@ -124,28 +155,28 @@ export const getJointSVGMarkup = (variant: 'classic' | 'cigar' | 'cone' | 'photo
     </svg>`;
   }
   if (variant === 'cigar') {
-    return `<svg viewBox="0 0 140 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+    return `<svg width="140" height="30" viewBox="0 0 140 30" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="cigarTobacco" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#2d1604" />
-          <stop offset="50%" stopColor="#4c270c" />
-          <stop offset="100%" stopColor="#2d1604" />
+          <stop offset="0%" stop-color="#2d1604" />
+          <stop offset="50%" stop-color="#4c270c" />
+          <stop offset="100%" stop-color="#2d1604" />
         </linearGradient>
         <linearGradient id="cigarBand" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#991b1b" />
-          <stop offset="40%" stopColor="#ca8a04" />
-          <stop offset="60%" stopColor="#eab308" />
-          <stop offset="100%" stopColor="#991b1b" />
+          <stop offset="0%" stop-color="#991b1b" />
+          <stop offset="40%" stop-color="#ca8a04" />
+          <stop offset="60%" stop-color="#eab308" />
+          <stop offset="100%" stop-color="#991b1b" />
         </linearGradient>
         <linearGradient id="cigarEmber" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#7f1d1d" />
-          <stop offset="50%" stopColor="#dc2626" />
-          <stop offset="100%" stopColor="#fb923c" />
+          <stop offset="0%" stop-color="#7f1d1d" />
+          <stop offset="50%" stop-color="#dc2626" />
+          <stop offset="100%" stop-color="#fb923c" />
         </linearGradient>
         <linearGradient id="ashGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#4a5568" />
-          <stop offset="50%" stopColor="#718096" />
-          <stop offset="100%" stopColor="#e2e8f0" />
+          <stop offset="0%" stop-color="#4a5568" />
+          <stop offset="50%" stop-color="#718096" />
+          <stop offset="100%" stop-color="#e2e8f0" />
         </linearGradient>
         <filter id="glow" x="-10%" y="-10%" width="120%" height="120%">
           <feGaussianBlur stdDeviation="0.4" result="blur" />
@@ -168,27 +199,27 @@ export const getJointSVGMarkup = (variant: 'classic' | 'cigar' | 'cone' | 'photo
     </svg>`;
   }
   if (variant === 'cone') {
-    return `<svg viewBox="0 0 140 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+    return `<svg width="140" height="30" viewBox="0 0 140 30" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="conePaper" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#ffedd5" stop-opacity="0.85" />
-          <stop offset="70%" stopColor="#fed7aa" stop-opacity="0.75" />
-          <stop offset="100%" stopColor="#fdba74" stop-opacity="0.9" />
+          <stop offset="0%" stop-color="#ffedd5" stop-opacity="0.85" />
+          <stop offset="70%" stop-color="#fed7aa" stop-opacity="0.75" />
+          <stop offset="100%" stop-color="#fdba74" stop-opacity="0.9" />
         </linearGradient>
         <linearGradient id="coneFilter" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#d97706" />
-          <stop offset="100%" stopColor="#b45309" />
+          <stop offset="0%" stop-color="#d97706" />
+          <stop offset="100%" stop-color="#b45309" />
         </linearGradient>
         <linearGradient id="emberGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#b91c1c" />
-          <stop offset="40%" stopColor="#ea580c" />
-          <stop offset="70%" stopColor="#f59e0b" />
-          <stop offset="100%" stopColor="#fffbeb" stop-opacity="0.9" />
+          <stop offset="0%" stop-color="#b91c1c" />
+          <stop offset="40%" stop-color="#ea580c" />
+          <stop offset="70%" stop-color="#f59e0b" />
+          <stop offset="100%" stop-color="#fffbeb" stop-opacity="0.9" />
         </linearGradient>
         <linearGradient id="ashGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#4a5568" />
-          <stop offset="50%" stopColor="#718096" />
-          <stop offset="100%" stopColor="#e2e8f0" />
+          <stop offset="0%" stop-color="#4a5568" />
+          <stop offset="50%" stop-color="#718096" />
+          <stop offset="100%" stop-color="#e2e8f0" />
         </linearGradient>
         <filter id="glow" x="-10%" y="-10%" width="120%" height="120%">
           <feGaussianBlur stdDeviation="0.4" result="blur" />
@@ -211,22 +242,22 @@ export const getJointSVGMarkup = (variant: 'classic' | 'cigar' | 'cone' | 'photo
       </g>
     </svg>`;
   }
-  return `<svg viewBox="0 0 140 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+  return `<svg width="140" height="30" viewBox="0 0 140 30" fill="none" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="paperGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stopColor="#f7fafc" />
-        <stop offset="60%" stopColor="#edf2f7" />
-        <stop offset="100%" stopColor="#cbd5e0" />
+        <stop offset="0%" stop-color="#f7fafc" />
+        <stop offset="60%" stop-color="#edf2f7" />
+        <stop offset="100%" stop-color="#cbd5e0" />
       </linearGradient>
       <linearGradient id="emberGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stopColor="#ef4444" />
-        <stop offset="50%" stopColor="#f97316" />
-        <stop offset="100%" stopColor="#facc15" stopOpacity="0.8" />
+        <stop offset="0%" stop-color="#ef4444" />
+        <stop offset="50%" stop-color="#f97316" />
+        <stop offset="100%" stop-color="#facc15" stop-opacity="0.8" />
       </linearGradient>
       <linearGradient id="ashGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stopColor="#4a5568" />
-        <stop offset="50%" stopColor="#718096" />
-        <stop offset="100%" stopColor="#e2e8f0" />
+        <stop offset="0%" stop-color="#4a5568" />
+        <stop offset="50%" stop-color="#718096" />
+        <stop offset="100%" stop-color="#e2e8f0" />
       </linearGradient>
       <filter id="glow" x="-10%" y="-10%" width="120%" height="120%">
         <feGaussianBlur stdDeviation="0.4" result="blur" />

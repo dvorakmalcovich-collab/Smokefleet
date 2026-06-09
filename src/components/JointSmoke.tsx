@@ -17,9 +17,10 @@ interface JointSmokeProps {
   intensity: number;
   active: boolean;
   angle: number; // to deflect smoke based on joint rotation
+  type?: string;
 }
 
-export default function JointSmoke({ color, intensity, active, angle }: JointSmokeProps) {
+export default function JointSmoke({ color, intensity, active, angle, type }: JointSmokeProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -130,13 +131,13 @@ export default function JointSmoke({ color, intensity, active, angle }: JointSmo
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', resizeCanvas);
     };
-  }, [color, intensity, active, angle]);
+  }, [color, intensity, active, angle, type]);
 
   return (
     <canvas
       ref={canvasRef}
       className="absolute top-0 left-0 w-full h-full pointer-events-none z-10"
-      style={{ mixBlendMode: 'screen' }}
+      style={{ mixBlendMode: type === 'black' ? 'normal' : 'screen' }}
       id="joint-smoke-canvas"
     />
   );
